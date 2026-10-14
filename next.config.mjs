@@ -3,6 +3,8 @@ const nextConfig = {
   reactStrictMode: true,
   experimental: {
     typedRoutes: false,
+    cpus: 1,
+    outputFileTracingRoot: process.cwd(),
   },
 };
 

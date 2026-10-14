@@ -13,11 +13,16 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push --skip-generate",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "rm -f prisma/dev.db && npm run db:push && npm run db:seed"
+    "db:reset": "rm -f prisma/dev.db && npm run db:push && npm run db:seed",
+    "typecheck": "tsc --noEmit",
+    "test:frontend": "tsx --test src/frontend/lib/*.test.ts",
+    "dev:demo": "node scripts/demo-server.mjs dev",
+    "start:demo": "node scripts/demo-server.mjs start"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "next": "14.2.18",
+    "lucide-react": "^0.468.0",
+    "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8"
@@ -27,7 +32,10 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
     "postcss": "^8.4.49",
+    "prettier": "^3.9.10",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.19.2",

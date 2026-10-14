@@ -10,3 +10,7 @@ prisma/dev.db-journal
 prisma/migrations/dev/
 coverage/
 .DS_Store
+*.tsbuildinfo
+*.db*
+.env*
+qa/

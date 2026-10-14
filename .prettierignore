@@ -1,0 +1,8 @@
+node_modules
+.next
+package-lock.json
+qa
+public
+src/lib
+src/app/api
+prisma
