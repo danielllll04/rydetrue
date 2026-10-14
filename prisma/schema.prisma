@@ -1,0 +1,189 @@
+// RydeTRUE - Prisma schema
+// SQLite for local development. All data is synthetic.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// -----------------------------------------------------------------------------
+// Core trip record. Synthetic Singapore data only.
+// -----------------------------------------------------------------------------
+model Trip {
+  id              String    @id @default(cuid())
+  caseCode        String    @unique // e.g. RT-001
+  city            String    // "Singapore"
+  status          String    // CANCELLED_BY_DRIVER | CANCELLED_BY_RIDER | COMPLETED | NO_SHOW
+  requestedAt     DateTime
+  acceptedAt      DateTime?
+  cancelledAt     DateTime?
+  pickupLabel     String    // Human-readable pickup point
+  pickupLat       Float
+  pickupLng       Float
+  dropoffLabel    String
+  dropoffLat      Float
+  dropoffLng      Float
+  fareAmountCents Int       // Synthetic fare in cents (SGD)
+  currency        String    @default("SGD")
+  cancellationFeeCents Int? // Fee charged (if any) at cancellation
+
+  dispute         Dispute?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([caseCode])
+}
+
+// -----------------------------------------------------------------------------
+// Dispute filed against a Trip. One dispute per trip for now.
+// -----------------------------------------------------------------------------
+model Dispute {
+  id              String    @id @default(cuid())
+  caseCode        String    @unique // Human-readable, e.g. RT-001
+  tripId          String    @unique
+  category        String    // CANCELLATION_FEE | WRONG_PICKUP | OVERCHARGE | ...
+  status          String    // OPEN | INVESTIGATING | PENDING_REVIEW | EVALUATED | AWAITING_APPROVAL | APPROVED | REJECTED | REOPENED | CLOSED
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+  summary         String
+
+  trip            Trip      @relation(fields: [tripId], references: [id])
+  statements      Statement[]
+  evidence        Evidence[]
+  findings        AgentFinding[]
+  recommendations Recommendation[]
+  audit           AuditEvent[]
+
+  @@index([caseCode])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// Statements from each party (rider, driver). Verbatim text.
+// -----------------------------------------------------------------------------
+model Statement {
+  id          String   @id @default(cuid())
+  disputeId   String
+  role        String   // RIDER | DRIVER
+  authorAlias String   // Synthetic display name (e.g. "Rider A", "Driver B")
+  text        String
+  submittedAt DateTime @default(now())
+
+  dispute     Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId, role])
+}
+
+// -----------------------------------------------------------------------------
+// Evidence with versioning and content hash for chain of custody.
+// type ∈ GPS_PING | PHOTO_META | CHAT_LOG | TRIP_TELEMETRY | AUDIO_META
+// -----------------------------------------------------------------------------
+model Evidence {
+  id         String   @id @default(cuid())
+  disputeId  String
+  type       String
+  source     String   // RIDER_PHONE | DRIVER_PHONE | PLATFORM | THIRD_PARTY
+  refGroup   String   // Logical grouping key (e.g. "rider-gps", "driver-gps")
+  version    Int      @default(1)
+  hash       String   // SHA-256 of canonical payload (hex)
+  capturedAt DateTime
+  payload    String   // JSON string
+  notes      String?
+
+  dispute    Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@unique([disputeId, refGroup, version])
+  @@index([disputeId, type])
+  @@index([disputeId, refGroup])
+}
+
+// -----------------------------------------------------------------------------
+// AgentFinding - AI agent outputs. In M1 these were produced by deterministic
+// retrieval; in M2 they are produced by LLM-powered agents:
+// RIDER_ADVOCATE | DRIVER_ADVOCATE | NEUTRAL_RESOLUTION
+// The investigationId in the payload groups findings from one investigation.
+// -----------------------------------------------------------------------------
+model AgentFinding {
+  id         String   @id @default(cuid())
+  disputeId  String
+  agent      String   // INVESTIGATOR | AUDITOR | RECOMMENDER (future)
+  summary    String
+  payload    String   // JSON
+  createdAt  DateTime @default(now())
+
+  dispute    Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId, agent])
+}
+
+// -----------------------------------------------------------------------------
+// PolicyVersion - versioned policy rules with effective window.
+// Rules are JSON, evaluated deterministically by src/lib/policy.ts.
+// -----------------------------------------------------------------------------
+model PolicyVersion {
+  id            String   @id @default(cuid())
+  code          String   // CANCELLATION_FEE_SG_V1
+  version       Int
+  description   String
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  rules         String   // JSON-encoded rules
+  createdAt     DateTime @default(now())
+
+  recommendations Recommendation[]
+
+  @@unique([code, version])
+  @@index([code, effectiveFrom])
+}
+
+// -----------------------------------------------------------------------------
+// Recommendation - the output of evaluating a dispute against a policy.
+// Supports history: multiple recommendations per dispute, with supersededById
+// linking older ones to their replacement. The "current" recommendation is the
+// one where supersededById IS NULL.
+// Also tracks sufficiency state, evidence snapshot, and human approval.
+// -----------------------------------------------------------------------------
+model Recommendation {
+  id                String    @id @default(cuid())
+  disputeId         String
+  policyVersionId   String
+  outcome           String    // REFUND_FULL | REFUND_PARTIAL | NO_REFUND | SPLIT | INSUFFICIENT_EVIDENCE | ESCALATE_FOR_REVIEW | INCONCLUSIVE
+  sufficiencyState  String    // SUFFICIENT | INSUFFICIENT_EVIDENCE | CONTRADICTORY_EVIDENCE | ESCALATE_FOR_REVIEW
+  refundCents       Int       @default(0)
+  rationale         String
+  citations         String    // JSON array of {evidenceId, ruleId, note}
+  evidenceSnapshot  String    // JSON array of {evidenceId, refGroup, version, hash}
+  approvalState     String    @default("PENDING") // PENDING | APPROVED | REJECTED | NOT_APPLICABLE
+  approvedBy        String?
+  approvedAt        DateTime?
+  supersededById    String?   // ID of the recommendation that superseded this one (null = current)
+  createdAt         DateTime  @default(now())
+
+  dispute           Dispute       @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  policyVersion     PolicyVersion @relation(fields: [policyVersionId], references: [id])
+
+  @@index([disputeId, createdAt])
+  @@index([disputeId, supersededById])
+  @@index([outcome])
+}
+
+// -----------------------------------------------------------------------------
+// AuditEvent - immutable record of any action touching a dispute.
+// -----------------------------------------------------------------------------
+model AuditEvent {
+  id         String   @id @default(cuid())
+  disputeId  String
+  actor      String   // system | agent:<name> | reviewer:<id>
+  action     String   // OPEN | EVALUATE | RECOMMEND | APPEAL | CLOSE
+  payload    String   // JSON
+  createdAt  DateTime @default(now())
+
+  dispute    Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId, createdAt])
+}
