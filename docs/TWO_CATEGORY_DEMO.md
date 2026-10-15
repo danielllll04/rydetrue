@@ -74,7 +74,31 @@ The verifier first compares unique RT-002 evidence IDs with the configured dispo
 - Fresh HTTP verification: both categories, all twelve mock agent findings/citations, both approvals and audit histories passed; zero Groq HTTP requests.
 - Application database and approved branding hashes matched the pre-change baseline. Credential scan found no configured key in repository files or public client assets.
 
-## Limits
+## Checkpoint D: controlled real Groq result (15 October 2026)
+
+**Stage 1 passed. Stage 2 did not pass; the full RT-002 live flow is not verified.** The integrated API used `openai/gpt-oss-120b` against a fresh disposable database. All three Stage 1 agents completed genuine inference with validated schemas and citations in about 53.9 seconds. The deterministic result was insufficient evidence with no refund approval available.
+
+After the pricing audit, the Rider Advocate completed with valid citations. Driver Advocate requests repeatedly received upstream HTTP 400 `json_validate_failed` / application `OUTPUT_JSON_INVALID`. The first Stage 2 attempt safely escalated after about 119.1 seconds and skipped Neutral. Three explicit recovery attempts also failed at Driver. Each recovery preserved the genuine completed Rider finding unchanged; no mock output was substituted.
+
+Integrated request totals across both stages and recovery:
+
+| Agent              | HTTP requests | HTTP 200 | HTTP 400 | Known prompt tokens | Known completion tokens | HTTP response time total | Quota wait total |
+| ------------------ | ------------: | -------: | -------: | ------------------: | ----------------------: | -----------------------: | ---------------: |
+| Rider Advocate     |             3 |        2 |        1 |               5,826 |                   1,400 |                   6.99 s |          49.64 s |
+| Driver Advocate    |             9 |        1 |        8 |               2,683 |                     449 |                  16.83 s |         169.34 s |
+| Neutral Resolution |             1 |        1 |        0 |               2,379 |                     912 |                   2.57 s |          24.30 s |
+
+There were **13 integrated requests: 4 HTTP 200 and 9 HTTP 400, with zero HTTP 429**. Groq reported an 8,000-token-per-minute limit; existing pacing waited up to about 30.5 seconds between requests. Known successful usage was 10,888 prompt + 2,761 completion tokens. Failed-response token usage was not supplied and is not counted as zero.
+
+One separate bounded diagnostic request returned HTTP 200 from the requested model. It was not a completed integrated investigation, was not persisted as an agent finding, and is excluded from the validated-completion totals above. Metadata-only diagnostics of failing requests showed empty failed-generation content, so no specific malformed field could be identified. No provider error bodies or credentials were saved or printed. The precise upstream structured-output cause remains unresolved; no prompt, provider transport or validation was weakened to force a pass.
+
+The final real database retains five recommendations (initial, failed Stage 2 and three recoveries), a PENDING computed 600-cent recommendation, all audit history and **zero human decision events**. Every persisted finding validated; recovered Rider finding hashes matched. `prisma/dev.db` remained unchanged.
+
+The unified UI renders both categories, actual Groq findings and the live failure/recovery state correctly. Use the validated **explicit mock demo** for a dependable complete two-category presentation. RT-002's Driver structured-output failure is the remaining blocker to a dependable complete live fare demonstration. RT-001 was regression-tested through both stages in mock mode; it was not retested against Groq in this checkpoint.
+
+Detailed sanitized artifacts remain ignored locally: `qa/rt002-live-final-results.json`, `qa/two-category-groq-verification-1792054427598.json`, and `qa/rt002-live-format-blocker.png`. The failed initial verifier exited nonzero as expected. The mock verifier continued to pass after the live attempts. Its history inspection now permits additional preserved retry recommendations and still requires a completed current investigation, valid citations and explicit approval.
+
+## Prototype limits
 
 Synthetic source labels and VERIFIED pricing records are fixtures, not authenticated external payment evidence. Reviewer identities are claimed, not authenticated. Money movement is simulated. RT-002 supports SGD fixed accepted quotes and explicit permitted extras only; metered/time/distance pricing, arbitrary route complaints, payment integrations and real evidence ingestion are outside scope.
 

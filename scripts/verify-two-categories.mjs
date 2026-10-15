@@ -48,7 +48,9 @@ function findings(detail) {
   const run = currentInvestigation(detail),
     ids = new Set(detail.evidence.integrity.map((e) => e.id));
   assert(
-    run.provider === mode && run.findings.length === 3,
+    run.provider === mode &&
+      run.findings.length === 3 &&
+      run.completion?.payload.status === "COMPLETED",
     "provider_or_findings_invalid",
   );
   for (const item of run.findings) {
@@ -161,7 +163,7 @@ try {
     }
     findings(detail);
     assert(
-      detail.recommendationHistory.length === 2 &&
+      detail.recommendationHistory.length >= 2 &&
         detail.recommendationHistory[0].outcome === "INSUFFICIENT_EVIDENCE" &&
         detail.currentRecommendation.approvalState === "APPROVED",
       "history_or_approval_invalid",
