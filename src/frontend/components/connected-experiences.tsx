@@ -22,6 +22,8 @@ import {
   resolveCitationId,
   outcomeLabel,
 } from "../lib/view-model";
+import { isFareCase, caseAmountCents } from "../lib/fare-presentation";
+import { FareReconciliation } from "./fare-reconciliation";
 import { Badge, Button, EmptyState, Panel, SectionTitle } from "./ui";
 import { EvidenceReferences, PersistedAudit } from "./connected-investigation";
 import {
@@ -186,9 +188,7 @@ export function ConnectedOperations({
                   </td>
                   <td>{humanize(item.category)}</td>
                   <td>
-                    <strong>
-                      {money(item.trip.cancellationFeeCents || 0)}
-                    </strong>
+                    <strong>{money(caseAmountCents(item))}</strong>
                   </td>
                   <td>
                     <Badge
@@ -254,8 +254,10 @@ export function ConnectedTrip({ detail }: { detail: CaseDetail }) {
           PERSISTED TRIP
         </span>
         <strong>
-          {money(detail.trip.cancellationFeeCents || 0)}
-          <span>cancellation fee</span>
+          {money(caseAmountCents(detail))}
+          <span>
+            {isFareCase(detail) ? "charged fare" : "cancellation fee"}
+          </span>
         </strong>
       </div>
       <div className="trip-route">
@@ -460,6 +462,7 @@ export function ConnectedParty({
         </div>
         <aside>
           <ConnectedTrip detail={detail} />
+          <FareReconciliation detail={detail} />
           <Panel className="what-next">
             <SectionTitle>Case tracking</SectionTitle>
             <p className="quiet">Current backend status</p>
@@ -534,6 +537,7 @@ export function ConnectedResolution({
           </p>
         )}
       </Panel>
+      <FareReconciliation detail={detail} />
       <div className="resolution-grid">
         <Panel>
           <SectionTitle
@@ -556,7 +560,11 @@ export function ConnectedResolution({
                       <strong>
                         {additions.some((e) => e.type === "THIRD_PARTY_GEOTAG")
                           ? "Independent geotag added"
-                          : "Evidence snapshot updated"}
+                          : additions.some(
+                                (e) => e.type === "FARE_ADJUSTMENT_RECORD",
+                              )
+                            ? "Pricing audit added"
+                            : "Evidence snapshot updated"}
                       </strong>
                       <p>
                         New evidence versions included in the assessment below.
@@ -643,8 +651,16 @@ export function ConnectedResolution({
           <div className="reason-item">
             <span>01</span>
             <div>
-              <h3>The agreed pickup</h3>
-              <p>{detail.trip.pickup.label}</p>
+              <h3>
+                {isFareCase(detail)
+                  ? "The accepted fare and permitted extras"
+                  : "The agreed pickup"}
+              </h3>
+              <p>
+                {isFareCase(detail)
+                  ? "Only consistent accepted-price, charge and verified authorization records support fare reconciliation."
+                  : detail.trip.pickup.label}
+              </p>
             </div>
           </div>
           <div className="reason-item">

@@ -30,6 +30,8 @@ import {
   reviewBlockReason,
   investigationJourney,
 } from "../lib/view-model";
+import { isFareCase, caseAmountCents } from "../lib/fare-presentation";
+import { FareReconciliation } from "./fare-reconciliation";
 import { Badge, Button, Panel, SectionTitle } from "./ui";
 export function EvidenceReferences({
   ids,
@@ -116,7 +118,11 @@ export function ConnectedInvestigation({
   const [tab, setTab] = useState<"investigation" | "audit">("investigation");
   const rec = detail.currentRecommendation;
   const rows = evidenceRows(detail);
-  const hasGeotag = rows.some((e) => e.type === "THIRD_PARTY_GEOTAG");
+  const fare = isFareCase(detail);
+  const independentType = fare
+    ? "FARE_ADJUSTMENT_RECORD"
+    : "THIRD_PARTY_GEOTAG";
+  const hasGeotag = rows.some((e) => e.type === independentType);
   const stale = !!rec && !isSnapshotCurrent(detail);
   const agents = agentViews(detail);
   const run = currentInvestigation(detail);
@@ -171,10 +177,11 @@ export function ConnectedInvestigation({
           </p>
         </div>
         <div className="disputed-amount">
-          <span>DISPUTED AMOUNT</span>
-          <strong>{money(detail.trip.cancellationFeeCents || 0)}</strong>
+          <span>{fare ? "CHARGED FARE" : "DISPUTED AMOUNT"}</span>
+          <strong>{money(caseAmountCents(detail))}</strong>
         </div>
       </Panel>
+      <FareReconciliation detail={detail} />
       <div className="workspace-tabs">
         <div className="tab-group" aria-label="Workspace sections">
           <button
@@ -488,8 +495,12 @@ export function ConnectedInvestigation({
                   <p>
                     <strong>
                       {hasGeotag
-                        ? "Independent location context is now present."
-                        : "Independent geotag not yet recorded."}
+                        ? fare
+                          ? "Pricing audit is now recorded."
+                          : "Independent location context is now present."
+                        : fare
+                          ? "Verified permitted extras are not yet established."
+                          : "Independent geotag not yet recorded."}
                     </strong>{" "}
                     {rec
                       ? rec.rationale
@@ -547,12 +558,12 @@ export function ConnectedInvestigation({
                 <div className="evidence-timeline">
                   {rows.map((row) => (
                     <button
-                      className={`evidence-item ${row.type === "THIRD_PARTY_GEOTAG" ? "new-evidence" : ""}`}
+                      className={`evidence-item ${row.type === independentType ? "new-evidence" : ""}`}
                       key={row.refGroup}
                       onClick={() => inspect(row.id)}
                     >
                       <span className="timeline-marker">
-                        {row.type === "THIRD_PARTY_GEOTAG" ? (
+                        {row.type === independentType ? (
                           <Sparkles size={14} />
                         ) : (
                           <FileText size={14} />
@@ -587,20 +598,29 @@ export function ConnectedInvestigation({
                 className="add-evidence-button"
                 variant="secondary"
                 disabled={
-                  busy || hasGeotag || !rec || detail.caseCode !== "RT-001"
+                  busy ||
+                  hasGeotag ||
+                  !rec ||
+                  !["RT-001", "RT-002"].includes(detail.caseCode)
                 }
                 onClick={addGeotag}
               >
                 {hasGeotag
-                  ? "Geotag already submitted"
-                  : "Submit synthetic geotag"}
+                  ? fare
+                    ? "Pricing audit already submitted"
+                    : "Geotag already submitted"
+                  : fare
+                    ? "Submit synthetic pricing audit"
+                    : "Submit synthetic geotag"}
                 <ArrowUpRight size={14} />
               </Button>
               <p className="quiet evidence-help">
                 {detail.caseCode !== "RT-001"
-                  ? "The synthetic geotag example is available only for RT-001."
+                  ? "The synthetic Stage 2 examples are available for RT-001 and RT-002."
                   : hasGeotag
-                    ? "Independent geotag is recorded. Reinvestigate to evaluate the current snapshot."
+                    ? fare
+                      ? "Pricing audit is recorded. Reinvestigate to evaluate the current snapshot."
+                      : "Independent geotag is recorded. Reinvestigate to evaluate the current snapshot."
                     : !rec
                       ? "Run the initial investigation first to demonstrate the evidence gap."
                       : "This action opens a preview. Evidence is saved only after you explicitly submit."}

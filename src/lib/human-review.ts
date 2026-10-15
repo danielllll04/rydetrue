@@ -41,6 +41,8 @@ export async function reviewRecommendation(
     if (!recommendation) throw new ReviewError("recommendation_not_found", 404);
     if (recommendation.approvalState !== "PENDING")
       throw new ReviewError("already_actioned");
+    if (dispute.status !== "AWAITING_APPROVAL")
+      throw new ReviewError("case_not_eligible_for_review");
     const currents = await tx.recommendation.findMany({
       where: { disputeId: dispute.id, supersededById: null },
       select: { id: true },

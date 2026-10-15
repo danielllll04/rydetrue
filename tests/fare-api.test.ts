@@ -147,7 +147,16 @@ describe("fare API and independent agent workflow", () => {
     };
     expect((await submit(code, body)).status).toBe(201);
     const { recommendation } = await (await evaluateCase(code)).json();
-    expect((await investigateCase(code, new MockProvider(), FARE_POLICY_CODE, "test")).status).toBe("COMPLETED");
+    expect(
+      (
+        await investigateCase(
+          code,
+          new MockProvider(),
+          FARE_POLICY_CODE,
+          "test",
+        )
+      ).status,
+    ).toBe("COMPLETED");
     expect(recommendation).toMatchObject({
       outcome: "NO_REFUND",
       refundCents: 0,
@@ -238,6 +247,17 @@ describe("fare API and independent agent workflow", () => {
 });
 
 describe("atomic review safety for fare recommendations", () => {
+  it.each(["INVESTIGATING", "APPROVED", "REJECTED", "CLOSED"])(
+    "blocks pending review when case status is %s",
+    async (status) => {
+      const { code, rec } = await ready();
+      await prisma.dispute.update({
+        where: { caseCode: code },
+        data: { status },
+      });
+      expect((await decide(code, rec.id)).status).toBe(409);
+    },
+  );
   it.each(["APPROVED", "REJECTED"])(
     "blocks %s of a stale snapshot without audit/status mutation",
     async (decision) => {

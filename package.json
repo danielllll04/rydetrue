@@ -20,7 +20,10 @@
     "start:demo": "node scripts/demo-server.mjs start",
     "dev:groq": "node scripts/groq-server.mjs dev",
     "start:groq": "node scripts/groq-server.mjs start",
-    "verify:groq": "node --import tsx scripts/verify-groq.mjs"
+    "verify:groq": "node --import tsx scripts/verify-groq.mjs",
+    "start:two-category:mock": "node scripts/two-category-server.mjs mock start",
+    "start:two-category:groq": "node scripts/two-category-server.mjs groq start",
+    "verify:two-categories": "node --import tsx scripts/verify-two-categories.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -3621,3 +3621,40 @@ details summary {
     max-width: 100%;
   }
 }
+.fare-reconciliation {
+  margin-bottom: 22px;
+  padding: 24px;
+}
+.fare-amounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+.fare-amounts > div {
+  border: 1px solid var(--border, #f1e5eb);
+  background: #fff8fb;
+  padding: 14px;
+  border-radius: 12px;
+}
+.fare-amounts dt {
+  font-size: 12px;
+  color: #697482;
+}
+.fare-amounts dd {
+  margin: 8px 0 0;
+  font-weight: 700;
+  font-size: 18px;
+}
+.fare-line-items {
+  margin-bottom: 14px;
+}
+.fare-line-items p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.fare-line-items span {
+  white-space: nowrap;
+}

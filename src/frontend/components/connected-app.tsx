@@ -16,6 +16,8 @@ import {
   X,
 } from "lucide-react";
 import type { SubmitEvidenceRequest } from "@/lib/schemas";
+import { RT_002_STAGE_2 } from "@/lib/fare-case";
+import { isFareCase } from "../lib/fare-presentation";
 import { RT_001_STAGE_2_GEOTAG } from "@/lib/cases";
 import type { CaseDetail, PolicyDto, ProviderMode } from "../lib/api-types";
 import { apiClient, ApiError } from "../lib/api-client";
@@ -90,9 +92,11 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
   const dialogs = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detail = caseDetails.find((c) => c.caseCode === selectedCode) || null;
+  const fare = !!detail && isFareCase(detail);
+  const stageTwo = fare ? RT_002_STAGE_2 : RT_001_STAGE_2_GEOTAG;
   const activePolicy = policies.find(
     (p) =>
-      p.code === "CANCELLATION_FEE_SG" &&
+      p.code === (fare ? "FARE_RECONCILIATION_SG" : "CANCELLATION_FEE_SG") &&
       new Date(p.effectiveFrom) <= new Date() &&
       (!p.effectiveTo || new Date(p.effectiveTo) > new Date()),
   );
@@ -732,21 +736,29 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
           </Dialog>
         )}
         {modal?.kind === "geotag" && detail && (
-          <Dialog title="Submit new synthetic geotag" close={close}>
+          <Dialog
+            title={
+              fare
+                ? "Submit synthetic pricing audit"
+                : "Submit new synthetic geotag"
+            }
+            close={close}
+          >
             {error && (
               <p className="form-error" role="alert">
                 {error}
               </p>
             )}
             <p>
-              Preview of the existing backend RT-001 Stage 2 fixture. This
-              fictional airport record identifies the designated entrance and
-              driver’s actual waiting coordinates. It is not evidence from a
-              real airport service.
+              {fare
+                ? "Preview of the RT-002 synthetic pricing audit. It checks each receipt extra against the accepted fixed quote. This is a fixture, not an authenticated payment or external pricing service."
+                : "Preview of the existing backend RT-001 Stage 2 fixture. This fictional airport record identifies the designated entrance and driver’s actual waiting coordinates. It is not evidence from a real airport service."}
             </p>
-            <Badge tone="pink">THIRD_PARTY_GEOTAG · THIRD_PARTY</Badge>
+            <Badge tone="pink">
+              {stageTwo.type} · {stageTwo.source}
+            </Badge>
             <pre className="json-block">
-              {JSON.stringify(RT_001_STAGE_2_GEOTAG, null, 2)}
+              {JSON.stringify(stageTwo, null, 2)}
             </pre>
             <div className="modal-note">
               Saving creates a versioned backend evidence record. Investigation
@@ -755,21 +767,23 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
             <Button
               disabled={
                 busy ||
-                detail.caseCode !== "RT-001" ||
-                detail.evidence.groups.some(
-                  (g) => g.type === "THIRD_PARTY_GEOTAG",
-                )
+                !["RT-001", "RT-002"].includes(detail.caseCode) ||
+                detail.evidence.groups.some((g) => g.type === stageTwo.type)
               }
               onClick={() =>
                 void submitEvidence({
-                  ...RT_001_STAGE_2_GEOTAG,
+                  ...stageTwo,
                   actor: "reviewer:integration-demo",
                   notes:
                     "Synthetic Stage 2 fixture explicitly submitted in the connected workspace.",
                 })
               }
             >
-              {busy ? "Submitting…" : "Submit geotag evidence"}
+              {busy
+                ? "Submitting…"
+                : fare
+                  ? "Submit pricing audit evidence"
+                  : "Submit geotag evidence"}
               <ArrowRightIcon />
             </Button>
           </Dialog>

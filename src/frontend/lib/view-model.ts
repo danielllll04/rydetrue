@@ -182,6 +182,10 @@ const evidenceNames: Record<string, string> = {
   "trip-chat": "Trip chat",
   "trip-telemetry": "Trip telemetry",
   "third-party-geotag": "Independent geotag",
+  "accepted-fare-quote": "Accepted fare quote",
+  "charged-fare-receipt": "Itemized charged receipt",
+  "verified-pricing-audit": "Permitted-extras audit",
+  "fare-chat": "Fare discussion",
 };
 export const evidenceGroupLabel = (group: string) =>
   evidenceNames[group] || humanize(group.replaceAll("-", "_"));
@@ -224,8 +228,9 @@ export function outcomeLabel(outcome: string) {
 export function investigationJourney(detail: CaseDetail) {
   const rec = detail.currentRecommendation;
   const first = detail.recommendationHistory[0];
+  const fare = detail.category === "FARE_DISCREPANCY";
   const independent = detail.evidence.groups.filter(
-    (e) => e.type === "THIRD_PARTY_GEOTAG",
+    (e) => e.type === (fare ? "FARE_ADJUSTMENT_RECORD" : "THIRD_PARTY_GEOTAG"),
   );
   const fresh = isSnapshotCurrent(detail);
   const run = currentInvestigation(detail);
@@ -256,8 +261,12 @@ export function investigationJourney(detail: CaseDetail) {
       title: "Independent evidence",
       complete: independent.length > 0,
       description: independent.length
-        ? "Independent geotag recorded"
-        : "No independent geotag recorded",
+        ? fare
+          ? "Pricing audit recorded"
+          : "Independent geotag recorded"
+        : fare
+          ? "Pricing audit not yet recorded"
+          : "No independent geotag recorded",
     },
     {
       title: "Reinvestigation",
