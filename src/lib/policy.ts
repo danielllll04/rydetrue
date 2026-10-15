@@ -68,6 +68,7 @@ export interface Citation {
 }
 
 export interface EvaluationMetrics {
+  fare?: import("./fare-policy").FareMetrics;
   driverLastPos: LatLng | null;
   riderLastPos: LatLng | null;
   driverDistanceToPickupM: number | null;

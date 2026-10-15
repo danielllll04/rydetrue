@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fareQuoteSchema, fareReceiptSchema, fareAdjustmentSchema } from "./fare-contracts";
 
 /** Lat/lng coordinates. */
 export const latLngSchema = z.object({
@@ -19,6 +20,9 @@ export type GpsPing = z.infer<typeof gpsPingSchema>;
 
 /** Payload schemas per evidence type. */
 export const evidencePayloadSchema = z.union([
+  fareQuoteSchema,
+  fareReceiptSchema,
+  fareAdjustmentSchema,
   z.object({
     type: z.literal("GPS_PING"),
     trail: z.array(gpsPingSchema).min(1),
@@ -126,6 +130,9 @@ export type EvaluateRequest = z.infer<typeof evaluateRequestSchema>;
 /** Request body for POST /api/cases/[id]/evidence (submit new evidence). */
 export const submitEvidenceRequestSchema = z.object({
   type: z.enum([
+    "FARE_QUOTE",
+    "FARE_RECEIPT",
+    "FARE_ADJUSTMENT_RECORD",
     "GPS_PING",
     "PHOTO_META",
     "CHAT_LOG",
