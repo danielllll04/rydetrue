@@ -3006,6 +3006,270 @@ blockquote > span {
 .connected-shell {
   background: var(--surface);
 }
+/* Focused investigation polish; approved brand colors and shell are retained. */
+.investigation-journey {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 22px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.investigation-journey li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 15px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  min-width: 0;
+}
+.investigation-journey .current {
+  border-color: #f6b3ca;
+  background: var(--pink-soft);
+}
+.journey-number {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #f1f4f6;
+  color: #667985;
+  font-size: 11px;
+  font-weight: 600;
+}
+.complete .journey-number {
+  background: #edf6f1;
+  color: var(--green);
+}
+.current .journey-number {
+  background: var(--pink);
+  color: white;
+}
+.investigation-journey strong {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.investigation-journey p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #657885;
+  margin: 5px 0 0;
+}
+.connected-shell .main-investigation,
+.connected-shell .evidence-column {
+  min-width: 0;
+}
+.connected-shell .agent-card {
+  padding: 22px 18px;
+}
+.connected-shell .agent-card h3 {
+  font-size: 16px;
+  line-height: 1.4;
+}
+.connected-shell .agent-label {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+}
+.connected-shell .agent-card .agent-purpose {
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 12px 0 0;
+  color: #657885;
+}
+.connected-shell .agent-card .agent-summary {
+  font-size: 13px;
+  line-height: 1.8;
+  margin-bottom: 15px;
+  overflow-wrap: anywhere;
+}
+.connected-shell .finding-label {
+  font-size: 11px;
+  line-height: 1.6;
+  flex-wrap: wrap;
+}
+.connected-shell .agent-reasoning {
+  margin: 0 0 16px;
+}
+.connected-shell .agent-reasoning summary,
+.connected-shell .finding-details summary {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #536a78;
+}
+.agent-evidence-group {
+  border-left: 2px solid var(--line);
+  padding-left: 12px;
+  margin-top: 15px;
+}
+.agent-evidence-group > strong {
+  font-size: 11px;
+}
+.connected-shell .agent-evidence-group p {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.connected-shell .agent-evidence-group .connected-refs {
+  margin: 8px 0 15px;
+}
+.connected-shell .connected-refs button {
+  max-width: 100%;
+  padding: 6px 8px;
+  font-size: 10px;
+  color: #536a78;
+  gap: 5px;
+}
+.connected-shell .connected-refs button > span {
+  white-space: normal;
+  text-align: left;
+}
+.connected-shell .update-banner p {
+  font-size: 12px;
+  line-height: 1.75;
+  max-width: 660px;
+}
+.connected-shell .update-banner strong {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.connected-shell .integration-tools {
+  flex-wrap: wrap;
+}
+.connected-shell .integration-tools .badge {
+  font-size: 11px;
+}
+.connected-shell .section-title {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.connected-shell .evidence-item-content > strong {
+  font-size: 13px;
+}
+.connected-shell .evidence-item-content > p,
+.connected-shell .evidence-source {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.connected-shell .evidence-meta,
+.connected-shell .evidence-meta time,
+.connected-shell .evidence-item .badge {
+  font-size: 10px;
+}
+.connected-shell .evidence-help {
+  font-size: 11px;
+}
+.connected-shell .backend-code {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: #687c88;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.connected-shell .recommendation-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.connected-shell .recommendation-actions > span {
+  flex: 1 1 320px;
+  line-height: 1.8;
+  font-size: 12px;
+  align-items: flex-start;
+}
+.connected-shell .recommendation-actions > span > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.connected-shell .recommendation-actions .button:disabled {
+  opacity: 1;
+  background: #edf0f2;
+  border-color: #dce3e7;
+  color: #7a8993;
+  box-shadow: none;
+}
+.connected-shell .recommendation-heading {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.connected-shell .recommendation-heading > div:nth-child(2) {
+  flex: 1 1 250px;
+}
+.connected-shell .recommendation-heading .sufficiency {
+  margin-left: auto;
+}
+@media (max-width: 1360px) {
+  .connected-shell .investigation-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .connected-shell .evidence-timeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 20px;
+  }
+  .connected-shell .evidence-item {
+    padding-bottom: 0;
+  }
+  .connected-shell .evidence-item:not(:last-child)::before {
+    display: none;
+  }
+  .connected-shell .evidence-item.new-evidence {
+    margin: 0;
+    padding: 12px;
+    border-radius: 8px;
+  }
+}
+@media (max-width: 1000px) {
+  .investigation-journey {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .connected-shell .agent-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .connected-shell .agent-card {
+    display: flex;
+    padding: 22px;
+  }
+  .connected-shell .agent-top {
+    display: flex;
+    margin: 0 0 14px;
+  }
+  .connected-shell .agent-number {
+    display: block;
+  }
+  .connected-shell .agent-card > .connected-refs {
+    margin-top: 10px;
+  }
+  .connected-shell .workspace-tabs {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+@media (max-width: 520px) {
+  .investigation-journey {
+    gap: 8px;
+  }
+  .investigation-journey li {
+    padding: 12px 10px;
+    flex-direction: column;
+  }
+  .connected-shell .evidence-timeline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .connected-shell .recommendation-actions > div {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .connected-shell .recommendation-actions .button {
+    flex: 1 1 100%;
+  }
+}
 .connected-shell .recommendation h2 {
   overflow-wrap: anywhere;
 }
@@ -3079,11 +3343,11 @@ blockquote > span {
   line-height: 1.7;
 }
 .connected-shell .evidence-meta time {
-  font-size: 7px;
+  font-size: 10px;
 }
 .connected-shell .evidence-item .badge {
   margin-top: 8px;
-  font-size: 7px;
+  font-size: 10px;
   white-space: normal;
 }
 .add-evidence-button {
@@ -3285,10 +3549,10 @@ details summary {
     margin-bottom: 18px;
   }
   .connected-shell .evidence-meta time {
-    font-size: 9px;
+    font-size: 10px;
   }
   .connected-shell .evidence-item .badge {
-    font-size: 8px;
+    font-size: 10px;
   }
   .review-confirm {
     flex-direction: column;

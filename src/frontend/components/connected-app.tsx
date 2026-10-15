@@ -24,6 +24,9 @@ import {
   dateTime,
   evidenceRows,
   currentInvestigation,
+  outcomeLabel,
+  evidenceGroupLabel,
+  reviewBlockReason,
 } from "../lib/view-model";
 import type { View } from "../lib/types";
 import { Badge, Button, Dialog, EmptyState, Loading } from "./ui";
@@ -255,7 +258,7 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
   };
   const inspect = (id: string) => setModal({ kind: "evidence", id });
   const openReview = (decision: "APPROVED" | "REJECTED") => {
-    if (!detail?.currentRecommendation) return;
+    if (!detail?.currentRecommendation || busy || !canReview(detail)) return;
     setNotes("");
     setModal({
       kind: "review",
@@ -564,17 +567,18 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
           <Dialog title="Connected demo walkthrough" close={close}>
             <ol className="demo-guide">
               <li>Open RT-001 and run the initial investigation.</li>
-              <li>Read INSUFFICIENT_EVIDENCE and both persisted accounts.</li>
+              <li>Read the recorded evidence assessment and both accounts.</li>
               <li>
                 Preview and explicitly submit the synthetic THIRD_PARTY_GEOTAG.
               </li>
               <li>
-                Run reinvestigation. Review REFUND_FULL for S$5.00 and the new
-                evidence citations.
+                Run reinvestigation. Compare the actual recommendation with the
+                earlier version and inspect its evidence citations.
               </li>
               <li>
                 Compare recommendation history; explicitly approve or reject as
-                a claimed demo reviewer.
+                a claimed demo reviewer when the current recommendation is
+                eligible.
               </li>
             </ol>
             <div className="modal-note">
@@ -671,7 +675,8 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                     : "Integrity issue"}
                 </Badge>
                 <h3 className="modal-title">
-                  {shownEvidence.refGroup} · v{shownEvidence.latestVersion}
+                  {evidenceGroupLabel(shownEvidence.refGroup)} · v
+                  {shownEvidence.latestVersion}
                 </h3>
                 <p>
                   {shownEvidence.type} · {shownEvidence.source}
@@ -679,7 +684,7 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                   {dateTime(shownEvidence.latestCapturedAt)}
                 </p>
                 <div className="modal-note">
-                  ID: {shownEvidence.id}
+                  ID: <span className="hash-value">{shownEvidence.id}</span>
                   <br />
                   Hash:{" "}
                   <span className="hash-value">{shownEvidence.latestHash}</span>
@@ -703,6 +708,12 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                     <p>
                       Group: {historicalEvidence.refGroup}. Integrity:{" "}
                       {historicalEvidence.hashMatches ? "verified" : "failed"}.
+                    </p>
+                    <p>
+                      Recomputed hash:{" "}
+                      <span className="hash-value">
+                        {historicalEvidence.recomputedHash}
+                      </span>
                     </p>
                     <p>
                       The API returns payloads for latest versions only. This
@@ -782,11 +793,16 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                 Explicit human decision · simulated monetary action
               </Badge>
               <h3 className="modal-title">
-                {detail.currentRecommendation?.outcome} · S$
+                {detail.currentRecommendation &&
+                  outcomeLabel(detail.currentRecommendation.outcome)}{" "}
+                · S$
                 {(
                   (detail.currentRecommendation?.refundCents || 0) / 100
                 ).toFixed(2)}
               </h3>
+              <p className="backend-code">
+                Backend code: {detail.currentRecommendation?.outcome}
+              </p>
               <p>
                 Recommendation <span className="hash-value">{modal.recId}</span>
                 . The case and evidence will be re-read before the decision is
@@ -820,6 +836,13 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                 At least 10 characters. This identity is not authenticated by
                 the backend.
               </p>
+              {(reviewBlockReason(detail) ||
+                detail.currentRecommendation?.id !== modal.recId) && (
+                <p className="form-error" role="alert">
+                  {reviewBlockReason(detail) ||
+                    "The recommendation changed. Close this dialog and review the current version."}
+                </p>
+              )}
               <div className="review-confirm">
                 <Button
                   type="button"
@@ -831,7 +854,13 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={busy || !notes.trim() || !reviewer.trim()}
+                  disabled={
+                    busy ||
+                    notes.trim().length < 10 ||
+                    !reviewer.trim() ||
+                    !canReview(detail) ||
+                    detail.currentRecommendation?.id !== modal.recId
+                  }
                 >
                   {busy
                     ? "Recording decision…"

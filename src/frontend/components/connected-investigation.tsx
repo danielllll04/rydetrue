@@ -16,7 +16,6 @@ import {
 import type { CaseDetail, PolicyDto, ProviderMode } from "../lib/api-types";
 import {
   agentViews,
-  canReview,
   currentInvestigation,
   dateTime,
   evidenceRows,
@@ -24,26 +23,34 @@ import {
   isSnapshotCurrent,
   money,
   resolveCitationId,
+  evidenceLabel,
+  evidenceGroupLabel,
+  readableFindingText,
+  outcomeLabel,
+  reviewBlockReason,
+  investigationJourney,
 } from "../lib/view-model";
 import { Badge, Button, Panel, SectionTitle } from "./ui";
 export function EvidenceReferences({
   ids,
   inspect,
+  detail,
 }: {
   ids: string[];
   inspect: (id: string) => void;
+  detail: CaseDetail;
 }) {
   return (
     <div className="evidence-refs connected-refs">
       {[...new Set(ids)].map((id) => (
         <button
           key={id}
-          title={id}
-          aria-label={`Open evidence ${id}`}
+          title={`${evidenceLabel(detail, id)} — ${id}`}
+          aria-label={`Open ${evidenceLabel(detail, id)} — ${id}`}
           onClick={() => inspect(id)}
         >
           <FileText size={11} />
-          <span>{id === "policy" ? "Policy rule" : id}</span>
+          <span>{evidenceLabel(detail, id)}</span>
           <ArrowUpRight size={10} />
         </button>
       ))}
@@ -113,6 +120,10 @@ export function ConnectedInvestigation({
   const stale = !!rec && !isSnapshotCurrent(detail);
   const agents = agentViews(detail);
   const run = currentInvestigation(detail);
+  const journey = investigationJourney(detail);
+  const decisionReason = busy
+    ? "An operation is in progress. Wait before making a human decision."
+    : reviewBlockReason(detail);
   const providerLabel =
     run.provider === "mock"
       ? "Mock provider · persisted output"
@@ -192,6 +203,32 @@ export function ConnectedInvestigation({
         <PersistedAudit detail={detail} />
       ) : (
         <>
+          <ol
+            className="investigation-journey"
+            aria-label="Investigation journey"
+          >
+            {journey.map((step, index) => (
+              <li
+                key={step.title}
+                className={
+                  step.complete
+                    ? "complete"
+                    : step.current
+                      ? "current"
+                      : "waiting"
+                }
+                aria-current={step.current ? "step" : undefined}
+              >
+                <span className="journey-number">
+                  {step.complete ? <Check size={15} /> : `0${index + 1}`}
+                </span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{step.description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
           <div
             className={`update-banner ${rec?.sufficiencyState === "SUFFICIENT" && !stale ? "evaluated" : ""}`}
           >
@@ -204,18 +241,20 @@ export function ConnectedInvestigation({
                   ? "Start with both sides of the story."
                   : stale
                     ? "New evidence is waiting to be evaluated."
-                    : rec.sufficiencyState === "SUFFICIENT"
-                      ? "New evidence. A clearer picture."
-                      : "A missing piece: independent entrance evidence."}
+                    : ["APPROVED", "REJECTED"].includes(rec.approvalState)
+                      ? "Human decision recorded."
+                      : rec.sufficiencyState === "SUFFICIENT"
+                        ? "Evidence assessed. A person decides."
+                        : "Evidence gaps remain."}
               </strong>
               <p>
                 {!rec
                   ? "Run the backend investigation. No evidence or decision is submitted automatically."
                   : stale
-                    ? "The current recommendation predates the latest evidence. Human approval is disabled."
+                    ? "The current recommendation predates the latest evidence. Reinvestigate before any human decision."
                     : rec.sufficiencyState === "SUFFICIENT"
                       ? "Review the server findings, cited evidence and policy before making a human decision."
-                      : "GPS proximity alone cannot establish the pickup entrance. Submit a synthetic third-party geotag to continue."}
+                      : rec.rationale}
               </p>
             </div>
             <Button disabled={busy} onClick={investigate}>
@@ -298,6 +337,15 @@ export function ConnectedInvestigation({
                         ][i]
                       }
                     </span>
+                    <p className="agent-purpose">
+                      {
+                        [
+                          "Tests the rider’s account against the evidence, including what weakens it.",
+                          "Tests the driver’s account independently, including conflicting evidence.",
+                          "Reconciles both findings and explains the deterministic policy result.",
+                        ][i]
+                      }
+                    </p>
                     <div className="agent-divider" />
                     <span className="finding-label">
                       <span
@@ -312,16 +360,81 @@ export function ConnectedInvestigation({
                         ? ` · ${agent.uncertainty.toLowerCase()} uncertainty`
                         : ""}
                     </span>
-                    <p>{agent.summary}</p>
+                    <p className="agent-summary">
+                      {readableFindingText(detail, agent.summary)}
+                    </p>
+                    {agent.finding && (
+                      <details className="agent-reasoning">
+                        <summary>
+                          {i === 2
+                            ? "Agreements & disagreements"
+                            : "Supporting & challenging evidence"}
+                        </summary>
+                        {("supportingPoints" in agent.finding
+                          ? [
+                              {
+                                label: "Supports this account",
+                                points: agent.finding.supportingPoints,
+                              },
+                              {
+                                label: "Challenges this account",
+                                points: agent.finding.weakeningPoints,
+                              },
+                            ]
+                          : [
+                              {
+                                label: "Where the agents agree",
+                                points: agent.finding.agreements,
+                              },
+                              {
+                                label: "Where they disagree",
+                                points: agent.finding.disagreements,
+                              },
+                            ]
+                        ).map((group) => (
+                          <div
+                            className="agent-evidence-group"
+                            key={group.label}
+                          >
+                            <strong>{group.label}</strong>
+                            {group.points.length ? (
+                              group.points.map((point, pointIndex) => (
+                                <div key={pointIndex}>
+                                  <p>
+                                    {readableFindingText(
+                                      detail,
+                                      "claim" in point
+                                        ? point.claim
+                                        : point.point,
+                                    )}
+                                  </p>
+                                  <EvidenceReferences
+                                    detail={detail}
+                                    ids={point.citedEvidenceIds}
+                                    inspect={inspect}
+                                  />
+                                </div>
+                              ))
+                            ) : (
+                              <p>No points recorded in this finding.</p>
+                            )}
+                          </div>
+                        ))}
+                      </details>
+                    )}
                     {agent.reusedFromInvestigationId && (
                       <p className="quiet small">
                         Reused validated finding · unchanged inputs
                       </p>
                     )}
-                    <EvidenceReferences ids={agent.refs} inspect={inspect} />
+                    <EvidenceReferences
+                      detail={detail}
+                      ids={agent.refs}
+                      inspect={inspect}
+                    />
                     {agent.finding && (
                       <details className="finding-details">
-                        <summary>Structured finding</summary>
+                        <summary>Original finding & citation IDs</summary>
                         <pre className="json-block">
                           {JSON.stringify(agent.finding, null, 2)}
                         </pre>
@@ -376,7 +489,7 @@ export function ConnectedInvestigation({
                     <strong>
                       {hasGeotag
                         ? "Independent location context is now present."
-                        : "The missing link: the pickup entrance."}
+                        : "Independent geotag not yet recorded."}
                     </strong>{" "}
                     {rec
                       ? rec.rationale
@@ -447,15 +560,11 @@ export function ConnectedInvestigation({
                       </span>
                       <div className="evidence-item-content">
                         <div className="evidence-meta">
-                          <span title={row.id}>{row.id.slice(-9)}</span>
+                          <span>Version {row.latestVersion}</span>
                           <time>{dateTime(row.latestCapturedAt)}</time>
                         </div>
-                        <strong>
-                          {humanize(row.refGroup.replaceAll("-", "_"))}
-                        </strong>
-                        <p>
-                          {row.type} · version {row.latestVersion}
-                        </p>
+                        <strong>{evidenceGroupLabel(row.refGroup)}</strong>
+                        <p>{humanize(row.type)}</p>
                         <div className="evidence-source">
                           {humanize(row.source)}
                           <ArrowUpRight size={12} />
@@ -477,7 +586,9 @@ export function ConnectedInvestigation({
               <Button
                 className="add-evidence-button"
                 variant="secondary"
-                disabled={busy || hasGeotag || !rec}
+                disabled={
+                  busy || hasGeotag || !rec || detail.caseCode !== "RT-001"
+                }
                 onClick={addGeotag}
               >
                 {hasGeotag
@@ -486,9 +597,13 @@ export function ConnectedInvestigation({
                 <ArrowUpRight size={14} />
               </Button>
               <p className="quiet evidence-help">
-                {!rec
-                  ? "Run the initial investigation first to demonstrate the evidence gap."
-                  : "This action opens a preview. Evidence is saved only after you explicitly submit."}
+                {detail.caseCode !== "RT-001"
+                  ? "The synthetic geotag example is available only for RT-001."
+                  : hasGeotag
+                    ? "Independent geotag is recorded. Reinvestigate to evaluate the current snapshot."
+                    : !rec
+                      ? "Run the initial investigation first to demonstrate the evidence gap."
+                      : "This action opens a preview. Evidence is saved only after you explicitly submit."}
               </p>
               <div className="human-note">
                 <span>
@@ -517,18 +632,27 @@ export function ConnectedInvestigation({
                 </span>
                 <h2>
                   {rec
-                    ? rec.outcome === "REFUND_FULL"
-                      ? `REFUND_FULL · ${money(rec.refundCents)}`
-                      : rec.outcome
+                    ? `${outcomeLabel(rec.outcome)}${rec.refundCents ? ` · ${money(rec.refundCents)}` : ""}`
                     : "No recommendation yet"}
                 </h2>
+                {rec && (
+                  <p className="backend-code">
+                    Backend code: <code>{rec.outcome}</code>
+                  </p>
+                )}
               </div>
               <div className="sufficiency">
                 <span>Evidence sufficiency</span>
                 <strong className="sufficiency-state">
-                  {rec?.sufficiencyState || "NOT_EVALUATED"}
+                  {rec?.sufficiencyState === "SUFFICIENT"
+                    ? "Sufficient"
+                    : rec
+                      ? humanize(rec.sufficiencyState)
+                      : "Not assessed"}
                 </strong>
-                <small>Backend state · no invented confidence score</small>
+                <small>
+                  {rec?.sufficiencyState || "No backend assessment yet"}
+                </small>
               </div>
             </div>
             <p>
@@ -537,6 +661,7 @@ export function ConnectedInvestigation({
             </p>
             {rec && (
               <EvidenceReferences
+                detail={detail}
                 ids={rec.citations.map((c) =>
                   resolveCitationId(c.evidenceId, rec),
                 )}
@@ -544,24 +669,23 @@ export function ConnectedInvestigation({
               />
             )}
             <div className="recommendation-actions">
-              <span>
+              <span id="decision-eligibility" role="status">
                 <ShieldCheck size={14} />
-                {stale
-                  ? "New evidence requires reinvestigation before review"
-                  : rec
-                    ? `Approval: ${rec.approvalState} · simulated monetary actions`
-                    : "Human review is required for any refund recommendation"}
+                {decisionReason ||
+                  "Ready for human review. Both actions require confirmation and a reason; no money moves."}
               </span>
               <div>
                 <Button
                   variant="secondary"
-                  disabled={busy || !canReview(detail)}
+                  disabled={!!decisionReason}
+                  aria-describedby="decision-eligibility"
                   onClick={() => review("REJECTED")}
                 >
                   Reject recommendation
                 </Button>
                 <Button
-                  disabled={busy || !canReview(detail)}
+                  disabled={!!decisionReason}
+                  aria-describedby="decision-eligibility"
                   onClick={() => review("APPROVED")}
                 >
                   <Check size={16} />

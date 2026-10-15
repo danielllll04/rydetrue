@@ -20,6 +20,7 @@ import {
   isSnapshotCurrent,
   money,
   resolveCitationId,
+  outcomeLabel,
 } from "../lib/view-model";
 import { Badge, Button, EmptyState, Panel, SectionTitle } from "./ui";
 import { EvidenceReferences, PersistedAudit } from "./connected-investigation";
@@ -197,7 +198,18 @@ export function ConnectedOperations({
                     </Badge>
                   </td>
                   <td>
-                    {item.currentRecommendation?.outcome || "Not evaluated"}
+                    {item.currentRecommendation ? (
+                      <>
+                        <span>
+                          {outcomeLabel(item.currentRecommendation.outcome)}
+                        </span>
+                        <small className="backend-code">
+                          {item.currentRecommendation.outcome}
+                        </small>
+                      </>
+                    ) : (
+                      "Not evaluated"
+                    )}
                   </td>
                   <td>{item.recommendationHistory.length} versions</td>
                   <td>
@@ -448,7 +460,7 @@ export function ConnectedParty({
             <Badge tone="amber">{humanize(detail.status)}</Badge>
             <p className="quiet statement-copy">
               {detail.currentRecommendation
-                ? `${detail.currentRecommendation.outcome} · ${detail.currentRecommendation.approvalState}`
+                ? `${outcomeLabel(detail.currentRecommendation.outcome)} · ${humanize(detail.currentRecommendation.approvalState)}`
                 : "No recommendation yet."}
             </p>
             <p className="quiet small">
@@ -507,13 +519,14 @@ export function ConnectedResolution({
           <ShieldCheck size={35} />
         </span>
         <Badge tone={rec?.approvalState === "APPROVED" ? "green" : "amber"}>
-          {rec?.approvalState || "No recommendation"}
+          {rec ? humanize(rec.approvalState) : "No recommendation"}
         </Badge>
         <h2>
           {rec
-            ? `${rec.outcome}${rec.refundCents ? ` · ${money(rec.refundCents)}` : ""}`
+            ? `${outcomeLabel(rec.outcome)}${rec.refundCents ? ` · ${money(rec.refundCents)}` : ""}`
             : "Start with an investigation"}
         </h2>
+        {rec && <p className="backend-code">Backend code: {rec.outcome}</p>}
         <p>
           {rec?.rationale || "No backend recommendation has been issued yet."}
         </p>
@@ -534,7 +547,8 @@ export function ConnectedResolution({
         <Panel className="change-explanation">
           <SectionTitle>What changed between recommendations?</SectionTitle>
           <p>
-            {previous.outcome} → {rec?.outcome}. New evidence versions were
+            {outcomeLabel(previous.outcome)} →{" "}
+            {rec && outcomeLabel(rec.outcome)}. New evidence versions were
             included in the later snapshot:
           </p>
           {additions.map((e) => (
@@ -542,7 +556,11 @@ export function ConnectedResolution({
               <Badge tone="pink">
                 {e.refGroup} v{e.version}
               </Badge>
-              <EvidenceReferences ids={[e.evidenceId]} inspect={inspect} />
+              <EvidenceReferences
+                detail={detail}
+                ids={[e.evidenceId]}
+                inspect={inspect}
+              />
             </div>
           ))}
           <p className="quiet small">
@@ -570,13 +588,14 @@ export function ConnectedResolution({
                   <Badge
                     tone={item.approvalState === "APPROVED" ? "green" : "muted"}
                   >
-                    {item.approvalState}
+                    {humanize(item.approvalState)}
                   </Badge>
                 </div>
                 <h3>
-                  {item.outcome}{" "}
+                  {outcomeLabel(item.outcome)}{" "}
                   {item.refundCents ? money(item.refundCents) : ""}
                 </h3>
+                <p className="backend-code">Backend code: {item.outcome}</p>
                 <p>{item.rationale}</p>
                 <small>
                   {dateTime(item.createdAt)} · {item.policyCode} v
@@ -587,6 +606,7 @@ export function ConnectedResolution({
                   evidence groups
                 </p>
                 <EvidenceReferences
+                  detail={detail}
                   ids={item.citations.map((c) =>
                     resolveCitationId(c.evidenceId, item),
                   )}
