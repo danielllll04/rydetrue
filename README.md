@@ -1,108 +1,74 @@
 # RydeTRUE
 
-> **Evidence-led dispute resolution — Milestone 1 (deterministic core)**
->
-> Submission to the **Tencent Cloud AI CAN DO IT Hackathon Singapore 2026**, under Ryde's *Multi-Agent Autonomous Dispute Resolution System* challenge.
->
-> Tagline: **Two sides. One fair resolution.**
+**Two sides. One fair resolution.** A synthetic two-category dispute-resolution prototype for the Tencent Cloud Hackathon, Singapore, 16 October 2026. Unofficial Ryde concept; no real customer data or money movement.
 
-This milestone establishes the **deterministic foundation** of RydeTRUE: data model, evidence retrieval, GPS verification, policy evaluation, and APIs. AI agents and the full dashboard are intentionally deferred to subsequent milestones.
+The public demo uses **MOCK (simulated) agent responses**. Evidence processing, citation validation, deterministic policy evaluation, review eligibility, persisted recommendations and audit history run through the actual application API and SQLite database. Mock inference is never presented as live inference.
 
-All trip records and policies in this repository are **synthetic**. No production Ryde services are contacted and no real refunds are processed.
+## Run locally
 
-## Stack
+Use Node.js 22, preferably its latest security patch (`.node-version` pins the deployment version). No API key, environment file or existing database is needed.
 
-- Next.js 14 (App Router) + TypeScript (strict)
-- Tailwind CSS
-- Prisma + SQLite
-- Zod
-- Vitest
-
-## Quickstart
-
-```bash
-npm install
-npm run db:reset    # creates SQLite DB, runs schema, seeds RT-001
-npm test            # runs all Vitest tests
-npm run dev         # http://localhost:3000
+```sh
+npm ci --include=dev
+npx prisma generate
+npm run build
+npm run start:public
 ```
 
-## Synthetic case — RT-001
+Open http://localhost:10000/ (redirects to `/workspace`). Optional PowerShell port override: `$env:PORT='3140'; npm run start:public`. The launcher binds `0.0.0.0`, respects the hosting `PORT`, forces public mock mode and blocks external server fetches.
 
-| Field | Value |
-|---|---|
-| City | Singapore |
-| Category | Cancellation fee |
-| Disagreement | Where the pickup happened |
-| Rider claim | "I was at the pickup pin." |
-| Driver claim | "Rider wasn't there; I was at the lobby next door." |
-| Resolution | **REFUND_FULL** (SGD 5.00 returned) |
+Each visitor receives an opaque HttpOnly, SameSite cookie and a separate temporary SQLite database. Initialization uses tracked `prisma/demo-schema.sql` and synthetic TypeScript fixtures, never the ignored `prisma/dev.db`. Sessions expire 30 minutes after creation or on server restart/redeploy/hosting spin-down. Refresh starts a fresh session. **Start new demo** resets only the current visitor's two cases. Tabs sharing cookies share a session; use another browser/private window for independent visitors.
 
-The dispute resolves in favour of the rider because:
+## Judge walkthrough: both categories
 
-1. The rider's GPS trail ends ~2 m from the pickup pin.
-2. The driver's GPS trail ends ~96 m from the pickup pin (a different curb).
-3. The synthetic cancellation-fee policy v2 (`SG-CXL-R1`) refunds the fee whenever the rider is within 50 m of the pickup pin **and** the driver is farther than 50 m.
+1. Select RT-001 or RT-002 and run the initial investigation. Missing independent evidence prevents a supported monetary decision. Inspect each agent's actual mock findings and evidence citations.
+2. Submit the supplied independent evidence, then reinvestigate.
+3. Compare persisted recommendation history, evidence snapshots and policy explanation.
+4. Explicitly approve or reject the eligible current recommendation. Inspect the recorded human decision and audit history.
 
-## API
+**RT-001: cancellation fee.** The initial pickup evidence is uncertain; Stage 2 adds a synthetic independent third-party pickup geotag. The cancellation policy evaluates the synthetic S$5.00 fee.
 
-| Route | Description |
-|---|---|
-| `GET /api/cases` | List all disputes |
-| `GET /api/cases/RT-001` | Full case detail with statements, evidence (grouped + latest), hash integrity, and audit log |
-| `POST /api/cases/RT-001/evaluate` | Run policy against the case; persist recommendation + audit event |
-| `GET /api/policies` | List all policy versions |
+**RT-002: fare discrepancy.** The evaluator reconciles an accepted quote, actual charge and verified permitted extras using integer cents. A separate Stage 2 pricing audit resolves the initially missing authorization. For the provided fixture, S$29.00 charged minus S$20.00 accepted quote minus S$3.00 permitted extras computes S$6.00 excess. No-refund and insufficient/contradictory evidence paths are tested. Neither agents nor UI hardcode the refund or infer driver fault from route length.
 
-Example evaluation request:
+Public evidence writes accept only the supplied Stage 2 fixtures, once per case/session. Arbitrary uploads or claims of verified platform/third-party evidence are rejected. All records and parties are fictional.
 
-```bash
-curl -X POST http://localhost:3000/api/cases/RT-001/evaluate \
-  -H "content-type: application/json" \
-  -d '{"policyCode":"CANCELLATION_FEE_SG","actor":"system:demo"}'
+## Architecture and safety
+
+Next.js 15 / React 19 UI and Node route handlers; Prisma 5 / SQLite. Rider Advocate and Driver Advocate investigate independently. Neutral Resolution explains the independently computed deterministic recommendation. Agent findings are advisory, schema validated and citation checked; they cannot change policy outcomes or authorize money movement.
+
+Category-specific evidence sufficiency, conservative policy fallbacks, versioned canonical SHA-256 evidence hashes, recommendation snapshots/supersession and audit events are preserved. Human approval/rejection rechecks current pending recommendation, active policy and latest verified evidence atomically on the server. A request-scoped database context is mandatory in public mode; accidental access to the local database fails closed.
+
+Public safeguards: 32 sessions; 12 session creations/minute and 60/hour globally (including reset); 8 active API requests globally; 120 requests/minute/session; 24 valid attempted mutations/session; 16 KiB write bodies; same-origin JSON writes; per-session case mutation locks. Rate/capacity errors include `Retry-After: 60`. These are prototype bounds, not comprehensive DDoS protection.
+
+The original projects/databases remain untouched. Private developer launchers `start:two-category:mock` and `start:two-category:groq` remain available and copy a local snapshot into disposable QA storage. They are **not** public deployment entry points. Groq mode remains private and explicit. Rate-limit/recovery behavior is preserved; previous live RT-002 Stage 2 upstream JSON-validation failures are irrelevant to the fully labeled public mock flow. Do not configure Groq credentials on the host.
+
+## Validate
+
+```sh
+npm test
+npm run test:frontend
+npm run lint
+npm run typecheck
+npm run build
+npm audit
 ```
 
-## Architecture (M1)
+Regression tests initialize fresh disposable synthetic databases under ignored `qa/`, without resetting or requiring the original database. Opt-in real-inference tests are skipped by default. Public tests cover both full mock journeys, independent findings/citations, review gates, zero fetch calls, isolated state, reset/expiry, source restrictions, request/creation limits and concurrent mutations.
 
-```
-src/lib/
-  geo.ts        - Haversine, bearing
-  evidence.ts   - canonical JSON, SHA-256 hash, retrieval + versioning
-  policy.ts     - deterministic policy evaluator (pure function)
-  schemas.ts    - Zod schemas (evidence payloads, evaluate request)
-  cases.ts      - synthetic RT-001 fixtures
-  db.ts         - Prisma client
+With the public production server running:
 
-src/app/api/
-  cases/...                 - REST API
-src/app/page.tsx            - minimal landing page (logo text + links)
-
-prisma/
-  schema.prisma             - Trip, Dispute, Statement, Evidence,
-                              AgentFinding, PolicyVersion,
-                              Recommendation, AuditEvent
-  seed.ts                   - seeds RT-001 + policy versions
-
-tests/                      - Vitest suites (geo, evidence, policy,
-                              schemas, api)
+```sh
+npm run verify:public
+# Stop and restart npm run start:public, then:
+node --import tsx scripts/verify-public.mjs --after-restart
 ```
 
-## Limitations of M1
+For a different port on PowerShell, first set `$env:VERIFY_ORIGIN='http://127.0.0.1:3140'`. This HTTP verifier refuses non-loopback writes and uses two independent cookie sessions. Also validate both categories in independent browser sessions before submission.
 
-- **No AI agents yet** — `AgentFinding` is scaffolded for M2.
-- **No dashboard UI** — only a minimal landing page linking to JSON APIs.
-- **Synthetic data only** — RT-001 uses fictional statements, GPS pings and policy rules.
-- **Single-policy variant per dispute at evaluation** — multi-policy consensus arrives later.
-- **No appeals flow** — `AuditEvent` records actions but the appeal state machine is not yet implemented.
-- **No authentication** — `actor` field is trusted-as-claimed (placeholder).
-- **Single jurisdiction** — Singapore cancellation-fee policy only. Other categories (overcharge, no-show, etc.) follow the same pattern in M2.
+## Deployment and limitations
 
-## Next milestones (preview)
+Recommended: **one Render Free Node Web Service with ephemeral SQLite**, without a paid disk or database. See [DEPLOYMENT.md](DEPLOYMENT.md) for exact GitHub publication steps, hosting commands, environment variables, costs and acceptance checks. No public URL exists until publication/deployment is explicitly approved and completed.
 
-- **M2** — Investigator / Auditor / Recommender agents wired in via the `AgentFinding` model.
-- **M3** — Operator dashboard (case queue, evidence inspector, audit timeline).
-- **M4** — Appeals and reviewer overrides.
-- **M5** — Multi-policy evaluation with confidence-weighted consensus.
+This is a temporary synthetic prototype: no real refunds, authenticated reviewer identity, durable audit retention, production tenant identity or guaranteed uptime. Cookie loss or restart starts over. Capacity guards can temporarily reject legitimate visitors. HTTPS is required publicly. Run one Node process/instance; the session registry and locks are in memory and do not support horizontal scaling.
 
-## Branding
-
-The RydeTRUE logo and tagline are approved and provided separately. The repository contains only textual references to the brand (`rydeTRUE`) and the Ryde pink palette in `tailwind.config.ts`; no logo files are bundled here. Do not redesign or reproduce the logo.
+The patched dependency toolchain retains the approved palette/config and existing workspace CSS. Next-specific lint rules were replaced by explicit TypeScript parsing and React/hook rules to eliminate an unpatched vulnerable glob dependency; production Next type validation and full regression/build checks remain enabled. Local checks do not prove Linux host resources, account eligibility or live HTTPS readiness. Complete the public acceptance check after deployment before submitting the form.
