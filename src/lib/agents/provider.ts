@@ -17,12 +17,16 @@
  */
 
 import { ProviderMessage, ProviderResponse, ProviderOptions } from "./types";
-import { TencentCloudProvider } from "./providers/tencent";
+import { GroqProvider } from "./providers/groq";
 import { MockProvider } from "./providers/mock";
+import { selectedProviderMode } from "./provider-mode";
 
 export interface LLMProvider {
   /** Provider name for logging/audit (never exposes secrets). */
   readonly name: string;
+  readonly prefetchEvidence?: boolean;
+  /** Non-secret model/workflow identity used only for validated retry reuse. */
+  readonly configurationIdentity?: string;
 
   /**
    * Send a chat completion request.
@@ -35,7 +39,7 @@ export interface LLMProvider {
    */
   chat(
     messages: ProviderMessage[],
-    options?: ProviderOptions
+    options?: ProviderOptions,
   ): Promise<ProviderResponse>;
 }
 
@@ -67,10 +71,9 @@ export class ProviderTimeoutError extends ProviderError {
  * Factory: get the configured provider.
  *
  * Selection logic:
- *  1. If RYDETRUE_LLM_API_KEY is set → TencentCloudProvider (real LLM calls)
- *  2. If in test mode (VITEST or NODE_ENV=test) → MockProvider (deterministic)
- *  3. Otherwise → TencentCloudProvider (will throw NOT_CONFIGURED when called,
- *     causing the orchestrator to escalate to human review)
+ *  1. mock (default) → MockProvider, regardless of credentials or dotenv loading.
+ *  2. groq (explicit) → GroqProvider; errors escalate, never substitute mock.
+ *  3. Any other value → configuration failure; no network call or mock fallback.
  *
  * Uses static ES module imports. The circular dependency between this module
  * and the provider implementations is safe in ESM because all imported values
@@ -79,18 +82,16 @@ export class ProviderTimeoutError extends ProviderError {
  * module evaluation.
  */
 export function getProvider(): LLMProvider {
-  const apiKey = process.env.RYDETRUE_LLM_API_KEY ?? "";
-
-  if (apiKey) {
-    return new TencentCloudProvider();
-  }
-
-  // In test mode without API key, use mock provider.
-  if (process.env.VITEST === "true" || process.env.NODE_ENV === "test") {
-    return new MockProvider();
-  }
-
-  // Production without API key — will throw NOT_CONFIGURED when called,
-  // causing the orchestrator to escalate to human review.
-  return new TencentCloudProvider();
+  const mode = selectedProviderMode();
+  if (mode === "mock") return new MockProvider();
+  if (mode === "groq") return new GroqProvider();
+  return {
+    name: "unconfigured",
+    async chat() {
+      throw new ProviderError(
+        "RYDETRUE_LLM_MODE must be mock or groq.",
+        "NOT_CONFIGURED",
+      );
+    },
+  };
 }

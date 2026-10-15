@@ -19,7 +19,11 @@ import {
   EvidenceSnapshot,
 } from "./types";
 import { validateCitations } from "./tools";
-import { neutralResolutionSchema, NeutralResolution, finalAnswerResponseSchema } from "./schemas";
+import {
+  neutralResolutionSchema,
+  NeutralResolution,
+  finalAnswerResponseSchema,
+} from "./schemas";
 import { neutralResolutionPrompt } from "./prompts";
 import { AdvocateFinding } from "./schemas";
 import { EvaluationResult } from "../policy";
@@ -44,7 +48,7 @@ export interface NeutralResolutionInput {
  */
 export async function runNeutralResolution(
   provider: LLMProvider,
-  input: NeutralResolutionInput
+  input: NeutralResolutionInput,
 ): Promise<AgentExecutionResult<NeutralResolution>> {
   const startTime = Date.now();
 
@@ -62,6 +66,10 @@ export async function runNeutralResolution(
   try {
     const response = await provider.chat(messages, {
       timeoutMs: PROVIDER_TIMEOUT_MS,
+      telemetry: {
+        investigationId: input.evidenceSnapshot.investigationId,
+        agentRole: "NEUTRAL_RESOLUTION",
+      },
     });
 
     // Parse the response.
@@ -96,7 +104,7 @@ export async function runNeutralResolution(
     }
 
     const findingResult = neutralResolutionSchema.safeParse(
-      finalResult.data.final_answer
+      finalResult.data.final_answer,
     );
     if (!findingResult.success) {
       return {
@@ -131,7 +139,7 @@ export async function runNeutralResolution(
 function validateAndReturn(
   finding: NeutralResolution,
   input: NeutralResolutionInput,
-  startTime: number
+  startTime: number,
 ): AgentExecutionResult<NeutralResolution> {
   // Validate all cited evidence IDs.
   const allCitedIds = new Set<string>();
@@ -145,7 +153,7 @@ function validateAndReturn(
 
   const citationCheck = validateCitations(
     [...allCitedIds],
-    input.evidenceSnapshot
+    input.evidenceSnapshot,
   );
   if (!citationCheck.valid) {
     return {
@@ -190,8 +198,8 @@ function buildUserMessage(input: NeutralResolutionInput): string {
         payload: e.payload,
       })),
       null,
-      2
-    )
+      2,
+    ),
   );
 
   parts.push("\n=== DETERMINISTIC SUFFICIENCY STATE ===");
@@ -212,13 +220,13 @@ function buildUserMessage(input: NeutralResolutionInput): string {
         metrics: input.policyEvaluation.metrics,
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   parts.push(
     "\nProduce your structured resolution. Remember: you MUST agree with " +
-      "the deterministic policy outcome. Your role is to explain it, not override it."
+      "the deterministic policy outcome. Your role is to explain it, not override it.",
   );
 
   return parts.join("\n");

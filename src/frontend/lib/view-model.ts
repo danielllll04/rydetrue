@@ -92,6 +92,10 @@ export function agentViews(detail: CaseDetail) {
       refs,
       uncertainty: finding?.uncertaintyLevel,
       finding,
+      reusedFromInvestigationId:
+        typeof record?.payload.reusedFromInvestigationId === "string"
+          ? record.payload.reusedFromInvestigationId
+          : null,
     };
   });
 }

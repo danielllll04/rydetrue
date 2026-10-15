@@ -154,6 +154,7 @@ export type ApproveRequest = z.infer<typeof approveRequestSchema>;
 
 /** Request body for POST /api/cases/[id]/investigate. */
 export const investigateRequestSchema = z.object({
+  retryInvestigationId: z.string().min(1).max(100).optional(),
   policyCode: z.string().min(1),
   actor: z.string().default("system"),
 });

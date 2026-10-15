@@ -23,6 +23,7 @@ import {
   ToolResult,
   EvidenceSnapshot,
   AgentExecutionResult,
+  ProviderOptions,
 } from "./types";
 import {
   EVIDENCE_TOOLS,
@@ -32,10 +33,7 @@ import {
   ToolContext,
 } from "./tools";
 import { advocateFindingSchema, AdvocateFinding } from "./schemas";
-import {
-  toolCallResponseSchema,
-  finalAnswerResponseSchema,
-} from "./schemas";
+import { toolCallResponseSchema, finalAnswerResponseSchema } from "./schemas";
 
 const MAX_TOOL_CALLS = 8;
 const PROVIDER_TIMEOUT_MS = 30_000;
@@ -56,7 +54,7 @@ export interface AdvocateConfig {
 export async function runAdvocate(
   provider: LLMProvider,
   config: AdvocateConfig,
-  toolContext: ToolContext
+  toolContext: ToolContext,
 ): Promise<AgentExecutionResult<AdvocateFinding>> {
   const startTime = Date.now();
   let toolCallsUsed = 0;
@@ -74,10 +72,59 @@ export async function runAdvocate(
   ];
 
   try {
+    // Groq can receive the same complete, allowlisted case retrieval without
+    // spending model requests on deterministic read planning. Each advocate
+    // retrieves its own inputs; no other agent's finding is shared here.
+    let prefetchedEvidence: ProviderOptions["prefetchedEvidence"];
+    if (
+      provider.prefetchEvidence &&
+      toolContext.snapshot.entries.length + 3 <= MAX_TOOL_CALLS
+    ) {
+      const requests = [
+        { name: "list_evidence", arguments: {} },
+        { name: "get_statements", arguments: {} },
+        { name: "get_trip_info", arguments: {} },
+        ...toolContext.snapshot.entries.map((e) => ({
+          name: "get_evidence_detail",
+          arguments: { refGroup: e.refGroup },
+        })),
+      ];
+      const results = requests.map((request, index) =>
+        executeTool(
+          `prefetch_${index}`,
+          request.name,
+          request.arguments,
+          toolContext,
+        ),
+      );
+      if (results.some((result) => result.error))
+        throw new ProviderError(
+          "Application evidence prefetch failed.",
+          "EVIDENCE_RETRIEVAL_FAILED",
+        );
+      toolCallsUsed = results.length;
+      prefetchedEvidence = {
+        ids: toolContext.snapshot.entries.map((e) => e.evidenceId),
+        requests,
+        results,
+      };
+      messages.push({
+        role: "user",
+        applicationPrefetch: true,
+        content:
+          "The application has executed the case-scoped evidence tools for your independent investigation. These are actual tool results, not agent findings. Review all results and produce your final_answer JSON.\n" +
+          JSON.stringify(results),
+      });
+    }
     // --- Multi-turn tool-calling loop ---
     for (let turn = 0; turn < MAX_TOOL_CALLS; turn++) {
       const response = await provider.chat(messages, {
         timeoutMs: PROVIDER_TIMEOUT_MS,
+        prefetchedEvidence,
+        telemetry: {
+          investigationId: toolContext.snapshot.investigationId,
+          agentRole: config.role,
+        },
       });
 
       // Try to parse the response as tool calls or final answer.
@@ -100,13 +147,12 @@ export async function runAdvocate(
       if (toolCallResult && toolCallResult.tool_calls.length > 0) {
         // --- Execute tool calls ---
         // Add assistant message with tool calls to conversation.
-        const assistantToolCalls: ToolCallRequest[] = toolCallResult.tool_calls.map(
-          (tc, i) => ({
+        const assistantToolCalls: ToolCallRequest[] =
+          toolCallResult.tool_calls.map((tc, i) => ({
             id: `tc_${turn}_${i}`,
             name: tc.name,
             arguments: tc.arguments,
-          })
-        );
+          }));
 
         messages.push({
           role: "assistant",
@@ -119,7 +165,9 @@ export async function runAdvocate(
           const result = executeTool(tc.id, tc.name, tc.arguments, toolContext);
           messages.push({
             role: "tool",
-            content: JSON.stringify(result.error ? { error: result.error } : result.result),
+            content: JSON.stringify(
+              result.error ? { error: result.error } : result.result,
+            ),
             toolCallId: tc.id,
           });
           toolCallsUsed++;
@@ -143,7 +191,7 @@ export async function runAdvocate(
       if (finalResult) {
         // Validate the finding against the Zod schema.
         const findingResult = advocateFindingSchema.safeParse(
-          finalResult.final_answer
+          finalResult.final_answer,
         );
         if (!findingResult.success) {
           return {
@@ -179,7 +227,7 @@ export async function runAdvocate(
 
         const citationCheck = validateCitations(
           [...allCitedIds],
-          toolContext.snapshot
+          toolContext.snapshot,
         );
         if (!citationCheck.valid) {
           return {
@@ -240,10 +288,10 @@ export async function runAdvocate(
 /** Safe parse helper that returns null on failure instead of throwing. */
 function safeParse<T>(
   schema: { safeParse: (data: unknown) => { success: boolean; data?: T } },
-  data: unknown
+  data: unknown,
 ): T | null {
   const result = schema.safeParse(data);
-  return result.success ? result.data ?? null : null;
+  return result.success ? (result.data ?? null) : null;
 }
 
 // Re-export for the neutral agent.

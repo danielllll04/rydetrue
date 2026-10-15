@@ -6,6 +6,7 @@ import { investigateCase } from "@/lib/agents/orchestrator";
 interface RouteParams {
   params: { id: string };
 }
+const activeCases = new Set<string>();
 
 /**
  * POST /api/cases/[id]/investigate
@@ -38,32 +39,47 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   } catch (err) {
     return NextResponse.json(
       { error: "invalid_request", details: (err as Error).message },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  // --- Get the configured LLM provider ---
-  // In test mode (VITEST or NODE_ENV=test) without an API key, this returns
-  // a MockProvider. In production with RYDETRUE_LLM_API_KEY set, this returns
-  // a TencentCloudProvider. In production without an API key, the provider
-  // will throw NOT_CONFIGURED and the investigation escalates to human review.
-  const provider = getProvider();
+  if (activeCases.has(caseCode))
+    return NextResponse.json(
+      { error: "investigation_in_progress" },
+      { status: 409 },
+    );
+  activeCases.add(caseCode);
+  try {
+    // Only the explicit process mode selects a provider; credentials never opt in.
+    const provider = getProvider();
 
-  // --- Run the investigation ---
-  const result = await investigateCase(
-    caseCode,
-    provider,
-    body.policyCode,
-    body.actor
-  );
+    // --- Run the investigation ---
+    const result = await investigateCase(
+      caseCode,
+      provider,
+      body.policyCode,
+      body.actor,
+      { retryInvestigationId: body.retryInvestigationId },
+    );
 
-  // --- Return structured result ---
-  const httpStatus =
-    result.status === "FAILED"
-      ? 422
-      : result.status === "ESCALATED"
-        ? 200 // Escalated is still a valid response — case needs human review
-        : 200;
+    // --- Return structured result ---
+    const httpStatus =
+      result.status === "FAILED"
+        ? 422
+        : result.status === "ESCALATED"
+          ? 200 // Escalated is still a valid response — case needs human review
+          : 200;
 
-  return NextResponse.json(result, { status: httpStatus });
+    return NextResponse.json(
+      {
+        ...result,
+        ...(result.escalationReason?.includes("(retry_context_mismatch)")
+          ? { error: "retry_context_mismatch" }
+          : {}),
+      },
+      { status: httpStatus },
+    );
+  } finally {
+    activeCases.delete(caseCode);
+  }
 }

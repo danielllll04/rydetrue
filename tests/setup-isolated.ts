@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 // before importing db.ts so application and original databases are never touched.
 delete process.env.RYDETRUE_LLM_API_KEY;
 process.env.VITEST = "true";
+process.env.RYDETRUE_LLM_MODE = "mock";
 if (!global.__rydetrue_prisma) {
   const source = path.resolve("prisma/dev.db");
   if (!existsSync(source))

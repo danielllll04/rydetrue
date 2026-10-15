@@ -73,6 +73,10 @@ export function createApiClient(
             "The evidence payload does not match the documented schema.",
           policy_not_found:
             "No policy is effective for the selected case and time.",
+          investigation_in_progress:
+            "An investigation is already running for this case. Refresh before retrying.",
+          retry_context_mismatch:
+            "The retry inputs or stored findings changed. Run a fresh investigation.",
         };
         throw new ApiError(
           response.status,
@@ -167,12 +171,16 @@ export function createApiClient(
         { policyCode, actor: "reviewer:integration-demo" },
       );
     },
-    investigate(id: string, policyCode: string) {
+    investigate(id: string, policyCode: string, retryInvestigationId?: string) {
       return request(
         `${pathFor(id)}/investigate`,
         investigationResultSchema,
-        { policyCode, actor: "reviewer:integration-demo" },
-        120000,
+        {
+          policyCode,
+          actor: "reviewer:integration-demo",
+          ...(retryInvestigationId ? { retryInvestigationId } : {}),
+        },
+        240000,
       );
     },
     approve(id: string, recId: string, body: ApproveRequest) {

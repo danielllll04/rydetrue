@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
 const command = process.argv[2];
 if (!["dev", "start"].includes(command)) throw new Error("Use dev or start.");
-// The existing backend factory selects its MockProvider for VITEST=true.
-// This process-local flag makes demo execution explicit; no provider code changes.
-const env = { ...process.env, VITEST: "true" };
+// Explicit mock overrides credentials that Next may subsequently load from dotenv.
+const env = { ...process.env, RYDETRUE_LLM_MODE: "mock", VITEST: "true" };
 delete env.RYDETRUE_LLM_API_KEY;
 console.log(
   "RydeTRUE DEMO: existing mock agents + persisted local API. No real LLM calls.",

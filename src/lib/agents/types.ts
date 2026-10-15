@@ -13,6 +13,7 @@
 export type MessageRole = "system" | "user" | "assistant" | "tool";
 
 export interface ProviderMessage {
+  applicationPrefetch?: boolean;
   role: MessageRole;
   content: string;
   /** For "tool" role messages — the ID of the tool call this responds to. */
@@ -33,7 +34,10 @@ export interface ToolDefinition {
   /** JSON-schema-like description of expected arguments. */
   parameters: {
     type: "object";
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<
+      string,
+      { type: string; description: string; enum?: string[] }
+    >;
     required?: string[];
   };
 }
@@ -54,6 +58,16 @@ export interface ProviderResponse {
 }
 
 export interface ProviderOptions {
+  prefetchedEvidence?: {
+    ids: string[];
+    requests: Array<{ name: string; arguments: Record<string, unknown> }>;
+    results: ToolResult[];
+  };
+  telemetry?: {
+    investigationId: string;
+    agentRole: "RIDER_ADVOCATE" | "DRIVER_ADVOCATE" | "NEUTRAL_RESOLUTION";
+    logicalRequestId?: string;
+  };
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -104,6 +118,7 @@ export interface EvidenceSnapshot {
 export type AgentStatus = "COMPLETED" | "FAILED" | "SKIPPED" | "ESCALATED";
 
 export interface AgentExecutionResult<T> {
+  reusedFromInvestigationId?: string;
   status: AgentStatus;
   finding: T | null;
   error: string | null;
@@ -116,10 +131,7 @@ export interface AgentExecutionResult<T> {
 // ---------------------------------------------------------------------------
 
 export type InvestigationStatus =
-  | "COMPLETED"
-  | "PARTIAL"
-  | "FAILED"
-  | "ESCALATED";
+  "COMPLETED" | "PARTIAL" | "FAILED" | "ESCALATED";
 
 export interface InvestigationResult {
   investigationId: string;

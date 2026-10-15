@@ -19,7 +19,12 @@ import type { SubmitEvidenceRequest } from "@/lib/schemas";
 import { RT_001_STAGE_2_GEOTAG } from "@/lib/cases";
 import type { CaseDetail, PolicyDto, ProviderMode } from "../lib/api-types";
 import { apiClient, ApiError } from "../lib/api-client";
-import { canReview, dateTime, evidenceRows } from "../lib/view-model";
+import {
+  canReview,
+  dateTime,
+  evidenceRows,
+  currentInvestigation,
+} from "../lib/view-model";
 import type { View } from "../lib/types";
 import { Badge, Button, Dialog, EmptyState, Loading } from "./ui";
 import { ConnectedInvestigation } from "./connected-investigation";
@@ -196,12 +201,13 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
       setBusy(false);
     }
   }
-  function runInvestigation() {
+  function runInvestigation(retryInvestigationId?: string) {
     if (!detail || !activePolicy) return;
     void mutate(async () => {
       const result = await apiClient.investigate(
         detail.caseCode,
         activePolicy.code,
+        retryInvestigationId,
       );
       if (result.status === "ESCALATED" || result.status === "PARTIAL")
         notify(
@@ -391,7 +397,9 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
               <span />
               {providerMode === "mock"
                 ? "Mock agents · connected API"
-                : "Connected API"}
+                : providerMode === "groq"
+                  ? "Groq · live provider selected"
+                  : "Provider unconfigured"}
             </span>
             <button
               className="notification-button"
@@ -497,7 +505,11 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                       policies={policies}
                       mode={providerMode}
                       busy={busy || !activePolicy}
-                      investigate={runInvestigation}
+                      investigate={() => runInvestigation()}
+                      retry={() => {
+                        const id = currentInvestigation(detail).investigationId;
+                        if (typeof id === "string") runInvestigation(id);
+                      }}
                       evaluate={evaluate}
                       addGeotag={() => setModal({ kind: "geotag" })}
                       inspect={inspect}
@@ -568,8 +580,10 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
             <div className="modal-note">
               This workspace uses actual local backend APIs and SQLite
               persistence. In mock mode, advisory agent outputs come from the
-              existing deterministic mock provider. Real-provider tests have not
-              been verified. All monetary actions are simulated.
+              existing deterministic mock provider. Explicit Groq mode uses live
+              inference and never substitutes mock findings on failure. Per-run
+              execution status and provenance appear in the audit. All monetary
+              actions are simulated.
             </div>
             <p>
               The existing backend home page remains at <a href="/">/</a>.

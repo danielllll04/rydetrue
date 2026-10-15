@@ -139,6 +139,7 @@ export const policySchema = z.object({
   }),
 });
 const agentExecutionSchema = z.object({
+  reusedFromInvestigationId: z.string().optional(),
   status: z.enum(["COMPLETED", "FAILED", "ESCALATED", "SKIPPED"]),
   finding: z.unknown(),
   error: z.string().nullable(),
@@ -178,4 +179,4 @@ export type CaseSummary = z.infer<typeof caseSummarySchema>;
 export type Recommendation = z.infer<typeof recommendationSchema>;
 export type PolicyDto = z.infer<typeof policySchema>;
 export type InvestigationResultDto = z.infer<typeof investigationResultSchema>;
-export type ProviderMode = "mock" | "configured" | "unconfigured";
+export type ProviderMode = "mock" | "groq" | "unconfigured";

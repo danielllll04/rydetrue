@@ -29,7 +29,9 @@ npm run build
 npm run start:demo
 ```
 
-The demo launcher explicitly sets the existing backend's `VITEST=true` provider-selection flag and removes `RYDETRUE_LLM_API_KEY` from its child environment. This selects the existing `MockProvider` without changing provider code. The UI labels it as mock execution with real HTTP/SQLite persistence. Normal `npm run dev` / `npm start` retain the backend's original configuration: no provider key causes escalation, and a configured key is not described as verified real execution. No real-provider test has been claimed successful.
+Provider selection now requires an explicit mode: `mock` is the default even with local credentials present; only `RYDETRUE_LLM_MODE=groq` selects real inference. Demo launchers force mock mode before dotenv loading. Real-mode launchers always use a disposable database and never silently substitute mock findings. See [mode configuration and launch commands](docs/groq-mode.md) and [actual live verification results](docs/groq-verification.md).
+
+The subsequent [free-tier optimization and measured recovery results](docs/groq-optimization.md) document header-aware bounded waits, three fresh model requests per stage, validated recovery of completed advocate findings and the successfully recovered real two-stage investigation.
 
 The existing local database snapshot is already populated with initial RT-001 data. Do not run `db:reset` or the original `db:seed` script on an existing database: the latter deletes and recreates RT-001. Both original scripts are preserved for recoverability, not invoked by the integration workflow. If the ignored local database is missing on a new checkout, restore an authorized snapshot; this project does not silently seed or reset data.
 
@@ -75,7 +77,7 @@ Next 14 can cache static GET case lists. The workspace hydrates every returned c
 
 ## Preserved code and compatibility
 
-- All backend API handlers, `src/lib` policy/evidence/sufficiency/agent code, Prisma schema, seed source, original home/layout/styles, authoritative contract and original tests remain unchanged.
+- Deterministic policy/sufficiency, evidence validation, original prompts, tool execution, output validators, approval gates, Prisma schema/seed and original tests remain unchanged. The Groq milestones add explicit provider selection, transport and quota handling, evidence prefetch, validated stage recovery and the corresponding investigation API/UI support; see `docs/groq-optimization.md` for the verified scope.
 - New frontend code lives under `src/frontend`; App Router entry lives under `src/app/workspace`.
 - Original frontend components, fixtures and mock adapter are preserved in the new namespace, but the connected entry does not import the mock service or use fixture findings as API output.
 - React 18, Tailwind 3, Prisma 5 and backend aliases remain canonical. The frontend's Tailwind 4 import was removed; original backend Tailwind directives remain in place.
@@ -111,7 +113,7 @@ Open http://127.0.0.1:3101/workspace. This starts the built application with the
 - The current contract returns latest evidence payloads only. Historical citations show available version/integrity metadata and explicitly disclose when the old payload cannot be previewed.
 - The case-list endpoint's recommendation count reflects its backend query; the workspace uses full recommendation history instead. No backend query was silently changed.
 - Findings and uncertainty are advisory. No fabricated confidence percentages are displayed. Mock findings remain mock even though the API executes and persists them.
-- Only mock-provider behavior is validated here. Real-provider smoke tests remain skipped; no real LLM execution, authenticated approval or real financial settlement is claimed.
+- The original integration milestone validated mock behavior. The later real-provider milestone has a separate actual-results record in `docs/groq-verification.md`. Authenticated approval and real financial settlement remain unsupported.
 - New clones do not contain database files, secrets or installed packages. An authorized database snapshot is required.
 
 The full verification record is in `docs/integration-verification.md`. No merge or push is performed.

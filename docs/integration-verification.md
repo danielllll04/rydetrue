@@ -1,5 +1,7 @@
 # Integration verification — 14 October 2026
 
+This is the historical integration milestone record. The subsequent explicit-provider changes and actual Groq test results are documented in [Groq verification](groq-verification.md) and [mode configuration](groq-mode.md).
+
 ## Final result
 
 - Integration branch: `codex/ryde-integration`.

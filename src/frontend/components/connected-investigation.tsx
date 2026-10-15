@@ -89,6 +89,7 @@ export function ConnectedInvestigation({
   mode,
   busy,
   investigate,
+  retry,
   evaluate,
   addGeotag,
   inspect,
@@ -99,6 +100,7 @@ export function ConnectedInvestigation({
   mode: ProviderMode;
   busy: boolean;
   investigate: () => void;
+  retry: () => void;
   evaluate: () => void;
   addGeotag: () => void;
   inspect: (id: string) => void;
@@ -226,12 +228,22 @@ export function ConnectedInvestigation({
             </Button>
           </div>
           <div className="integration-tools">
+            {mode === "groq" &&
+              run.provider === "groq" &&
+              !stale &&
+              run.completion?.payload.status === "ESCALATED" &&
+              rec &&
+              ["PENDING", "NOT_APPLICABLE"].includes(rec.approvalState) && (
+                <Button variant="secondary" disabled={busy} onClick={retry}>
+                  Retry failed agents
+                </Button>
+              )}
             <Badge tone={mode === "mock" ? "pink" : "amber"}>
               {mode === "mock"
                 ? "Mock agents · real HTTP + SQLite persistence"
                 : mode === "unconfigured"
                   ? "Provider not configured · execution may escalate"
-                  : "Configured provider · real-provider tests not verified"}
+                  : "Groq selected · live inference · no mock fallback"}
             </Badge>
             <Button variant="secondary" disabled={busy} onClick={evaluate}>
               Evaluate policy only
@@ -301,6 +313,11 @@ export function ConnectedInvestigation({
                         : ""}
                     </span>
                     <p>{agent.summary}</p>
+                    {agent.reusedFromInvestigationId && (
+                      <p className="quiet small">
+                        Reused validated finding · unchanged inputs
+                      </p>
+                    )}
                     <EvidenceReferences ids={agent.refs} inspect={inspect} />
                     {agent.finding && (
                       <details className="finding-details">

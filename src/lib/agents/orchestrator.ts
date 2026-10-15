@@ -21,15 +21,8 @@
  */
 
 import { prisma } from "@/lib/db";
-import {
-  groupLatestByRefGroup,
-  verifyHash,
-  hashPayload,
-} from "@/lib/evidence";
-import {
-  checkSufficiency,
-  extractGeotag,
-} from "@/lib/sufficiency";
+import { groupLatestByRefGroup, verifyHash, hashPayload } from "@/lib/evidence";
+import { checkSufficiency, extractGeotag } from "@/lib/sufficiency";
 import { evaluatePolicy, trailsFromGroups, Policy } from "@/lib/policy";
 import { LLMProvider } from "./provider";
 import {
@@ -45,12 +38,14 @@ import { runNeutralResolution } from "./neutral";
 import {
   riderAdvocatePrompt,
   driverAdvocatePrompt,
+  neutralResolutionPrompt,
 } from "./prompts";
 import { EVIDENCE_TOOLS } from "./tools";
 import { AdvocateFinding } from "./schemas";
 import { NeutralResolution } from "./schemas";
 import { EvaluationResult } from "@/lib/policy";
 import { SufficiencyResult } from "@/lib/sufficiency";
+import { loadCompletedAdvocates } from "./resume";
 
 const INVESTIGATION_TIMEOUT_MS = 120_000;
 
@@ -67,7 +62,8 @@ export async function investigateCase(
   caseCode: string,
   provider: LLMProvider,
   policyCode: string,
-  actor: string
+  actor: string,
+  options: { retryInvestigationId?: string } = {},
 ): Promise<InvestigationResult> {
   const investigationId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const startTime = Date.now();
@@ -85,7 +81,7 @@ export async function investigateCase(
       investigationId,
       caseCode,
       "Case not found",
-      "case_not_found"
+      "case_not_found",
     );
   }
 
@@ -96,30 +92,9 @@ export async function investigateCase(
       investigationId,
       caseCode,
       `Evidence integrity failed: ${corrupt.length} corrupt record(s)`,
-      "evidence_integrity_failed"
+      "evidence_integrity_failed",
     );
   }
-
-  // Update case status to INVESTIGATING.
-  await prisma.dispute.update({
-    where: { id: dispute.id },
-    data: { status: "INVESTIGATING" },
-  });
-
-  // Create INVESTIGATE audit event.
-  await prisma.auditEvent.create({
-    data: {
-      disputeId: dispute.id,
-      actor,
-      action: "INVESTIGATE",
-      payload: JSON.stringify({
-        investigationId,
-        provider: provider.name,
-        policyCode,
-        startedAt: new Date().toISOString(),
-      }),
-    },
-  });
 
   // -------------------------------------------------------------------------
   // STEP 2: Create a fixed evidence snapshot
@@ -190,7 +165,9 @@ export async function investigateCase(
   }
 
   const hasRiderStatement = dispute.statements.some((s) => s.role === "RIDER");
-  const hasDriverStatement = dispute.statements.some((s) => s.role === "DRIVER");
+  const hasDriverStatement = dispute.statements.some(
+    (s) => s.role === "DRIVER",
+  );
   const hasTripTelemetry = groups.some((g) => g.type === "TRIP_TELEMETRY");
 
   const sufficiency: SufficiencyResult = checkSufficiency({
@@ -217,7 +194,7 @@ export async function investigateCase(
       investigationId,
       caseCode,
       `Policy not found: ${policyCode}`,
-      "policy_not_found"
+      "policy_not_found",
     );
   }
 
@@ -247,7 +224,7 @@ export async function investigateCase(
       evidenceById: new Map(),
     },
     policy,
-    sufficiency.state
+    sufficiency.state,
   );
 
   // -------------------------------------------------------------------------
@@ -256,18 +233,87 @@ export async function investigateCase(
   // -------------------------------------------------------------------------
   const riderSystemPrompt = riderAdvocatePrompt(EVIDENCE_TOOLS);
   const driverSystemPrompt = driverAdvocatePrompt(EVIDENCE_TOOLS);
+  const inputFingerprint = hashPayload({
+    workflow: "validated-groq-retry-v1",
+    provider: provider.name,
+    configuration: provider.configurationIdentity ?? null,
+    snapshot: [...snapshotEntries].sort((a, b) =>
+      a.evidenceId.localeCompare(b.evidenceId),
+    ),
+    statements: [...toolContext.statements].sort((a, b) =>
+      JSON.stringify(a).localeCompare(JSON.stringify(b)),
+    ),
+    trip: toolContext.tripInfo,
+    policy,
+    policyIdentity: {
+      id: policyRow.id,
+      effectiveFrom: policyRow.effectiveFrom.toISOString(),
+      effectiveTo: policyRow.effectiveTo?.toISOString() ?? null,
+    },
+    sufficiency,
+    policyEvaluation,
+    prompts: [riderSystemPrompt, driverSystemPrompt, neutralResolutionPrompt()],
+    tools: EVIDENCE_TOOLS,
+  });
+  let completed: Awaited<ReturnType<typeof loadCompletedAdvocates>> = {};
+  if (options.retryInvestigationId) {
+    if (provider.name !== "groq" || !provider.configurationIdentity)
+      return buildErrorResult(
+        investigationId,
+        caseCode,
+        "Only explicit Groq investigations support validated retry reuse.",
+        "retry_context_mismatch",
+      );
+    try {
+      completed = await loadCompletedAdvocates(
+        dispute.id,
+        options.retryInvestigationId,
+        inputFingerprint,
+        snapshot,
+      );
+    } catch {
+      return buildErrorResult(
+        investigationId,
+        caseCode,
+        "Retry inputs or stored findings no longer match. Start a fresh investigation.",
+        "retry_context_mismatch",
+      );
+    }
+  }
+  await prisma.dispute.update({
+    where: { id: dispute.id },
+    data: { status: "INVESTIGATING" },
+  });
+  await prisma.auditEvent.create({
+    data: {
+      disputeId: dispute.id,
+      actor,
+      action: "INVESTIGATE",
+      payload: JSON.stringify({
+        investigationId,
+        provider: provider.name,
+        policyCode,
+        startedAt: new Date().toISOString(),
+        inputFingerprint,
+        retryOf: options.retryInvestigationId ?? null,
+        reusedAgents: Object.keys(completed),
+      }),
+    },
+  });
 
   const [riderResult, driverResult] = await Promise.all([
-    runAdvocate(
-      provider,
-      { role: "RIDER_ADVOCATE", systemPrompt: riderSystemPrompt },
-      toolContext
-    ),
-    runAdvocate(
-      provider,
-      { role: "DRIVER_ADVOCATE", systemPrompt: driverSystemPrompt },
-      toolContext
-    ),
+    completed.RIDER_ADVOCATE ??
+      runAdvocate(
+        provider,
+        { role: "RIDER_ADVOCATE", systemPrompt: riderSystemPrompt },
+        toolContext,
+      ),
+    completed.DRIVER_ADVOCATE ??
+      runAdvocate(
+        provider,
+        { role: "DRIVER_ADVOCATE", systemPrompt: driverSystemPrompt },
+        toolContext,
+      ),
   ]);
 
   // -------------------------------------------------------------------------
@@ -280,7 +326,10 @@ export async function investigateCase(
   let investigationStatus: InvestigationStatus = "COMPLETED";
   let escalationReason: string | null = null;
 
-  if (riderResult.status !== "COMPLETED" || driverResult.status !== "COMPLETED") {
+  if (
+    riderResult.status !== "COMPLETED" ||
+    driverResult.status !== "COMPLETED"
+  ) {
     // One or both advocates failed — escalate.
     investigationStatus = "ESCALATED";
     escalationReason =
@@ -368,6 +417,11 @@ export async function investigateCase(
         payload: JSON.stringify({
           investigationId,
           ...riderResult.finding,
+          inputFingerprint,
+          provider: provider.name,
+          findingHash: hashPayload(riderResult.finding),
+          reusedFromInvestigationId:
+            riderResult.reusedFromInvestigationId ?? null,
           toolCallsUsed: riderResult.toolCallsUsed,
           durationMs: riderResult.durationMs,
         }),
@@ -384,6 +438,11 @@ export async function investigateCase(
         payload: JSON.stringify({
           investigationId,
           ...driverResult.finding,
+          inputFingerprint,
+          provider: provider.name,
+          findingHash: hashPayload(driverResult.finding),
+          reusedFromInvestigationId:
+            driverResult.reusedFromInvestigationId ?? null,
           toolCallsUsed: driverResult.toolCallsUsed,
           durationMs: driverResult.durationMs,
         }),
@@ -400,6 +459,9 @@ export async function investigateCase(
         payload: JSON.stringify({
           investigationId,
           ...neutralResult.finding,
+          inputFingerprint,
+          provider: provider.name,
+          findingHash: hashPayload(neutralResult.finding),
           durationMs: neutralResult.durationMs,
         }),
       },
@@ -468,7 +530,7 @@ export async function investigateCase(
   // Update case status.
   const newStatus = outcomeToStatus(
     policyEvaluation.outcome,
-    policyEvaluation.refundCents
+    policyEvaluation.refundCents,
   );
   await prisma.dispute.update({
     where: { id: dispute.id },
@@ -484,6 +546,21 @@ export async function investigateCase(
       payload: JSON.stringify({
         investigationId,
         status: investigationStatus,
+        inputFingerprint,
+        provider: provider.name,
+        reusedAgents: Object.keys(completed),
+        retryOf: options.retryInvestigationId ?? null,
+        findingHashes: {
+          RIDER_ADVOCATE: riderResult.finding
+            ? hashPayload(riderResult.finding)
+            : null,
+          DRIVER_ADVOCATE: driverResult.finding
+            ? hashPayload(driverResult.finding)
+            : null,
+          NEUTRAL_RESOLUTION: neutralResult?.finding
+            ? hashPayload(neutralResult.finding)
+            : null,
+        },
         riderAdvocate: riderResult.status,
         driverAdvocate: driverResult.status,
         neutralResolution: neutralResult?.status ?? "SKIPPED",
@@ -509,6 +586,7 @@ export async function investigateCase(
     agents: {
       riderAdvocate: {
         status: riderResult.status,
+        reusedFromInvestigationId: riderResult.reusedFromInvestigationId,
         finding: riderResult.finding,
         error: riderResult.error,
         toolCallsUsed: riderResult.toolCallsUsed,
@@ -516,6 +594,7 @@ export async function investigateCase(
       },
       driverAdvocate: {
         status: driverResult.status,
+        reusedFromInvestigationId: driverResult.reusedFromInvestigationId,
         finding: driverResult.finding,
         error: driverResult.error,
         toolCallsUsed: driverResult.toolCallsUsed,
@@ -573,7 +652,7 @@ function buildErrorResult(
   investigationId: string,
   caseCode: string,
   message: string,
-  code: string
+  code: string,
 ): InvestigationResult {
   return {
     investigationId,

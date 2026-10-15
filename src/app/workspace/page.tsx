@@ -1,11 +1,13 @@
 import { ConnectedApp } from "@/frontend/components/connected-app";
+import { selectedProviderMode } from "@/lib/agents/provider-mode";
 export const dynamic = "force-dynamic";
 export default function WorkspacePage() {
+  const selected = selectedProviderMode();
   const mode =
-    process.env.VITEST === "true" && !process.env.RYDETRUE_LLM_API_KEY
+    selected === "mock"
       ? "mock"
-      : process.env.RYDETRUE_LLM_API_KEY
-        ? "configured"
+      : selected === "groq" && process.env.RYDETRUE_LLM_API_KEY?.trim()
+        ? "groq"
         : "unconfigured";
   return <ConnectedApp providerMode={mode} />;
 }

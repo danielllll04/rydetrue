@@ -17,7 +17,10 @@
     "typecheck": "tsc --noEmit",
     "test:frontend": "tsx --test src/frontend/lib/*.test.ts",
     "dev:demo": "node scripts/demo-server.mjs dev",
-    "start:demo": "node scripts/demo-server.mjs start"
+    "start:demo": "node scripts/demo-server.mjs start",
+    "dev:groq": "node scripts/groq-server.mjs dev",
+    "start:groq": "node scripts/groq-server.mjs start",
+    "verify:groq": "node --import tsx scripts/verify-groq.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

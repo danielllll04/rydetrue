@@ -15,6 +15,7 @@
 
 import { LLMProvider, ProviderError, ProviderTimeoutError } from "../provider";
 import { ProviderMessage, ProviderResponse, ProviderOptions } from "../types";
+import { retryAfterMs } from "../rate-limit";
 
 const DEFAULT_BASE_URL = "https://api.lkeap.cloud.tencent.com/v1";
 const DEFAULT_MODEL = "hunyuan-pro";
@@ -58,13 +59,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** Compute retry delay with exponential backoff and jitter. */
-function computeRetryDelay(attempt: number, retryAfterHeader?: string | null): number {
+function computeRetryDelay(
+  attempt: number,
+  retryAfterHeader?: string | null,
+): number {
   // If server provided Retry-After, respect it (capped at MAX_RETRY_DELAY_MS).
   if (retryAfterHeader) {
-    const seconds = parseInt(retryAfterHeader, 10);
-    if (!isNaN(seconds) && seconds > 0) {
-      return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
-    }
+    const delay = retryAfterMs(retryAfterHeader);
+    if (delay !== null) return delay;
   }
   // Exponential backoff: 500ms * 2^attempt, with 50-100% jitter.
   const base = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
@@ -73,16 +75,52 @@ function computeRetryDelay(attempt: number, retryAfterHeader?: string | null): n
 }
 
 export class TencentCloudProvider implements LLMProvider {
-  readonly name = "tencent-cloud";
+  protected readonly maxRetryWaitMs: number = 30000;
+  protected async beforeAttempt(
+    _body: Record<string, unknown>,
+    _options?: ProviderOptions,
+  ): Promise<void> {}
+  protected async observeResponse(
+    _response: Response,
+    _body: Record<string, unknown>,
+    _options: ProviderOptions | undefined,
+    _attempt: number,
+    _durationMs: number,
+    _waitMs: number,
+  ): Promise<void> {}
+  protected retryDelay(attempt: number, response?: Response): number {
+    const delay = computeRetryDelay(
+      attempt,
+      response?.headers.get("Retry-After"),
+    );
+    if (delay > this.maxRetryWaitMs)
+      throw new ProviderError(
+        "Provider requires a longer cooldown. Retry later; no early request was sent.",
+        "RATE_LIMIT_DEFERRED",
+      );
+    return delay;
+  }
+  readonly name: string;
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly defaultModel: string;
+  private readonly requestOptions: Record<string, unknown>;
 
-  constructor() {
+  constructor(
+    config: {
+      name?: string;
+      baseUrl?: string;
+      model?: string;
+      requestOptions?: Record<string, unknown>;
+    } = {},
+  ) {
+    this.name = config.name ?? "tencent-cloud";
     this.apiKey = process.env.RYDETRUE_LLM_API_KEY ?? "";
     this.baseUrl =
-      process.env.RYDETRUE_LLM_BASE_URL ?? DEFAULT_BASE_URL;
-    this.defaultModel = process.env.RYDETRUE_LLM_MODEL ?? DEFAULT_MODEL;
+      config.baseUrl ?? process.env.RYDETRUE_LLM_BASE_URL ?? DEFAULT_BASE_URL;
+    this.defaultModel =
+      config.model ?? process.env.RYDETRUE_LLM_MODEL ?? DEFAULT_MODEL;
+    this.requestOptions = config.requestOptions ?? {};
 
     if (!this.apiKey) {
       // Don't throw here — the orchestrator checks provider readiness
@@ -95,35 +133,43 @@ export class TencentCloudProvider implements LLMProvider {
     return this.apiKey.length > 0;
   }
 
+  protected buildRequestBody(
+    messages: ProviderMessage[],
+    options?: ProviderOptions,
+  ): Record<string, unknown> {
+    return {
+      model: options?.model ?? this.defaultModel,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      temperature: options?.temperature ?? DEFAULT_TEMPERATURE,
+      max_tokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
+      response_format: { type: "json_object" },
+      ...this.requestOptions,
+    };
+  }
+
+  protected completionContent(message: {
+    content?: string | null;
+    tool_calls?: unknown[];
+  }): string | null | undefined {
+    return message.content;
+  }
+
   async chat(
     messages: ProviderMessage[],
-    options?: ProviderOptions
+    options?: ProviderOptions,
   ): Promise<ProviderResponse> {
     if (!this.apiKey) {
       throw new ProviderError(
         "RYDETRUE_LLM_API_KEY is not set. Configure it in .env to use real LLM calls.",
         "NOT_CONFIGURED",
-        false
+        false,
       );
     }
 
-    const model = options?.model ?? this.defaultModel;
-    const temperature = options?.temperature ?? DEFAULT_TEMPERATURE;
-    const maxTokens = options?.maxTokens ?? DEFAULT_MAX_TOKENS;
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     // Build OpenAI-compatible request body.
-    const body: Record<string, unknown> = {
-      model,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-      temperature,
-      max_tokens: maxTokens,
-      // Request JSON output for reliable parsing.
-      response_format: { type: "json_object" },
-    };
+    const body = this.buildRequestBody(messages, options);
 
     // Bounded retry loop for transient failures (429, 5xx, network errors).
     // Timeouts (AbortError) and 4xx (non-429) are NOT retried.
@@ -132,13 +178,14 @@ export class TencentCloudProvider implements LLMProvider {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const isLastAttempt = attempt === MAX_RETRIES;
+      const waitStarted = Date.now();
+      await this.beforeAttempt(body, options);
+      const waitMs = Date.now() - waitStarted;
+      const requestStarted = Date.now();
 
       // Create a fresh AbortController per attempt (previous one may have fired).
       const controller = new AbortController();
-      const timeoutHandle = setTimeout(
-        () => controller.abort(),
-        timeoutMs
-      );
+      const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 
       // Merge caller's signal with our timeout signal.
       if (options?.signal) {
@@ -154,6 +201,7 @@ export class TencentCloudProvider implements LLMProvider {
       try {
         response = await fetch(`${this.baseUrl}/chat/completions`, {
           method: "POST",
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${this.apiKey}`,
@@ -167,15 +215,15 @@ export class TencentCloudProvider implements LLMProvider {
         // Timeout — NOT retryable (server might still be processing).
         if (err instanceof Error && err.name === "AbortError") {
           throw new ProviderTimeoutError(
-            `Request timed out after ${timeoutMs}ms`
+            `Request timed out after ${timeoutMs}ms`,
           );
         }
 
         // Network error — retryable.
         lastError = new ProviderError(
-          `Network error: ${(err as Error).message}`,
+          "Provider network request failed.",
           "NETWORK_ERROR",
-          true
+          true,
         );
 
         if (isLastAttempt) {
@@ -184,37 +232,53 @@ export class TencentCloudProvider implements LLMProvider {
         }
 
         // Exponential backoff with jitter, then retry.
-        const delayMs = computeRetryDelay(attempt);
+        const delayMs = this.retryDelay(attempt);
         await sleep(delayMs, options?.signal).catch(() => {
           // Sleep interrupted (caller aborted) — throw timeout.
-          throw new ProviderTimeoutError("Request aborted during retry backoff");
+          throw new ProviderTimeoutError(
+            "Request aborted during retry backoff",
+          );
         });
         continue;
       }
 
       clearTimeout(timeoutHandle);
+      await this.observeResponse(
+        response,
+        body,
+        options,
+        attempt,
+        Date.now() - requestStarted,
+        waitMs,
+      );
 
       // --- Check HTTP status ---
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "unknown");
+        // Never expose upstream error bodies: they may echo authentication data.
+        const upstream = await response.json().catch(() => null);
+        const outputJsonInvalid =
+          this.name === "groq" &&
+          response.status === 400 &&
+          upstream?.error?.code === "json_validate_failed";
         // 429 = rate limit (retryable), 5xx = server error (retryable)
         const retryable =
           response.status === 429 ||
           (response.status >= 500 && response.status < 600);
 
         const error = new ProviderError(
-          `Provider returned ${response.status}: ${errorText.slice(0, 200)}`,
-          `HTTP_${response.status}`,
-          retryable
+          `Provider returned HTTP ${response.status}.`,
+          outputJsonInvalid ? "OUTPUT_JSON_INVALID" : `HTTP_${response.status}`,
+          retryable,
         );
 
         if (retryable && !isLastAttempt) {
           lastError = error;
           // Respect Retry-After header if present (primarily for 429).
-          const retryAfter = response.headers.get("Retry-After");
-          const delayMs = computeRetryDelay(attempt, retryAfter);
+          const delayMs = this.retryDelay(attempt, response);
           await sleep(delayMs, options?.signal).catch(() => {
-            throw new ProviderTimeoutError("Request aborted during retry backoff");
+            throw new ProviderTimeoutError(
+              "Request aborted during retry backoff",
+            );
           });
           continue;
         }
@@ -229,7 +293,7 @@ export class TencentCloudProvider implements LLMProvider {
       // --- Parse response body (NOT retried — server is responding) ---
       let data: {
         choices?: Array<{
-          message?: { content?: string; tool_calls?: unknown[] };
+          message?: { content?: string | null; tool_calls?: unknown[] };
           finish_reason?: string;
         }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -241,25 +305,24 @@ export class TencentCloudProvider implements LLMProvider {
         throw new ProviderError(
           "Provider returned invalid JSON",
           "INVALID_RESPONSE",
-          false
+          false,
         );
       }
 
       const choice = data.choices?.[0];
-      if (!choice || !choice.message?.content) {
+      const content = choice?.message && this.completionContent(choice.message);
+      if (!content) {
         throw new ProviderError(
           "Provider returned no content",
           "EMPTY_RESPONSE",
-          false
+          false,
         );
       }
 
-      const content = choice.message.content;
-      const finishReason = choice.finish_reason ?? "stop";
-
       // Parse content as JSON (we requested json_object format).
       // The model may return tool calls or a final answer.
-      let parsed: { tool_calls?: unknown; final_answer?: unknown } | null = null;
+      let parsed: { tool_calls?: unknown; final_answer?: unknown } | null =
+        null;
       try {
         parsed = JSON.parse(content);
       } catch {
@@ -291,7 +354,7 @@ export class TencentCloudProvider implements LLMProvider {
       : new ProviderError(
           "Retry loop exited without a result",
           "RETRY_EXHAUSTED",
-          false
+          false,
         );
   }
 }
