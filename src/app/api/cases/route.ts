@@ -1,8 +1,9 @@
+import { withDemoSession } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 
-export async function GET(_req: NextRequest) {
+async function handleGET(_req: NextRequest) {
   const disputes = await prisma.dispute.findMany({
     include: {
       trip: true,
@@ -27,4 +28,8 @@ export async function GET(_req: NextRequest) {
       recommendationCount: d.recommendations.length,
     })),
   });
+}
+
+export async function GET(req: NextRequest) {
+  return withDemoSession(req, request => handleGET(request));
 }

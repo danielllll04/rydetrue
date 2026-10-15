@@ -1,9 +1,10 @@
+import { withDemoSession } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 import { reviewRecommendation, ReviewError } from "@/lib/human-review";
 import { approveRequestSchema } from "@/lib/schemas";
 
 interface RouteParams {
-  params: { id: string; recId: string };
+  params: Promise<{ id: string; recId: string }> | { id: string; recId: string };
 }
 
 /**
@@ -16,8 +17,8 @@ interface RouteParams {
  * Sets approvalState to APPROVED or REJECTED, records who approved and when,
  * and creates an audit event. Updates the case status accordingly.
  */
-export async function POST(req: NextRequest, { params }: RouteParams) {
-  const { id: caseCode, recId } = params;
+async function handlePOST(req: NextRequest, { params }: RouteParams) {
+  const { id: caseCode, recId } = await params;
 
   let body;
   try {
@@ -53,4 +54,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       simulated: true,
     },
   });
+}
+export function POST(req: NextRequest, context: RouteParams): Promise<NextResponse>;
+export function POST(req: NextRequest, context: { params: Promise<{ id: string; recId: string }> }): Promise<NextResponse>;
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string; recId: string }> | { id: string; recId: string } }) {
+  return withDemoSession(req, request => handlePOST(request, context));
 }

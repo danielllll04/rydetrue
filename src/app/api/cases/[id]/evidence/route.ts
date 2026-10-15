@@ -1,3 +1,4 @@
+import { withDemoSession } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { submitEvidenceRequestSchema, evidencePayloadSchema } from "@/lib/schemas";
@@ -5,7 +6,7 @@ import { hashPayload } from "@/lib/evidence";
 import { FARE_EVIDENCE_TYPES } from "@/lib/fare-contracts";
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }> | { id: string };
 }
 
 /**
@@ -18,8 +19,8 @@ interface RouteParams {
  * The payload is validated against the Zod evidence payload schema. The hash
  * is computed over the canonical JSON of the payload for chain-of-custody.
  */
-export async function POST(req: NextRequest, { params }: RouteParams) {
-  const caseCode = params.id;
+async function handlePOST(req: NextRequest, { params }: RouteParams) {
+  const caseCode = (await params).id;
 
   let body;
   try {
@@ -140,4 +141,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     },
     { status: 201 }
   );
+}
+
+export function POST(req: NextRequest, context: RouteParams): Promise<NextResponse>;
+export function POST(req: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse>;
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+  return withDemoSession(req, request => handlePOST(request, context));
 }

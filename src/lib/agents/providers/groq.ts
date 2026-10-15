@@ -1,5 +1,5 @@
 import { TencentCloudProvider } from "./tencent";
-import { ProviderError } from "../provider";
+import { ProviderError } from "../provider-errors";
 import type { ProviderMessage, ProviderOptions } from "../types";
 import { EVIDENCE_TOOL_NAMES } from "../tools";
 import { randomUUID } from "node:crypto";

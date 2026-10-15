@@ -1,3 +1,4 @@
+import { withDemoSession } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
@@ -7,7 +8,7 @@ import {
 } from "@/lib/evidence";
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }> | { id: string };
 }
 
 /**
@@ -17,8 +18,8 @@ interface RouteParams {
  * version + hash integrity), findings, recommendation history (all
  * recommendations including superseded ones), and audit log.
  */
-export async function GET(_req: NextRequest, { params }: RouteParams) {
-  const caseCode = params.id;
+async function handleGET(_req: NextRequest, { params }: RouteParams) {
+  const caseCode = (await params).id;
   const dispute = await prisma.dispute.findFirst({
     where: { caseCode },
     include: {
@@ -150,4 +151,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       createdAt: a.createdAt,
     })),
   });
+}
+export function GET(req: NextRequest, context: RouteParams): Promise<NextResponse>;
+export function GET(req: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse>;
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+  return withDemoSession(req, request => handleGET(request, context));
 }

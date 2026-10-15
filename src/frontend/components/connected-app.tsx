@@ -74,7 +74,13 @@ type Modal =
   | { kind: "help" | "account" | "geotag" | "notifications" }
   | { kind: "evidence"; id: string }
   | { kind: "review"; decision: "APPROVED" | "REJECTED"; recId: string };
-export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
+export function ConnectedApp({
+  providerMode,
+  publicDemo = false,
+}: {
+  providerMode: ProviderMode;
+  publicDemo?: boolean;
+}) {
   const [view, setView] = useState<View>("investigation");
   const [selectedCode, setSelectedCode] = useState("RT-001");
   const [caseDetails, setCaseDetails] = useState<CaseDetail[]>([]);
@@ -100,21 +106,25 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
       new Date(p.effectiveFrom) <= new Date() &&
       (!p.effectiveTo || new Date(p.effectiveTo) > new Date()),
   );
-  const refresh = useCallback(async (initial = false) => {
-    if (initial) setLoading(true);
-    const [summaries, nextPolicies] = await Promise.all([
-      apiClient.listCases(),
-      apiClient.listPolicies(),
-    ]);
-    // Next 14 may statically cache GET lists. Hydrate case detail (dynamic id
-    // route) so displayed statuses/history always come from persisted records.
-    const details = await Promise.all(
-      summaries.map((c) => apiClient.getCase(c.caseCode)),
-    );
-    setCaseDetails(details);
-    setPolicies(nextPolicies);
-    if (initial) setLoading(false);
-  }, []);
+  const refresh = useCallback(
+    async (initial = false) => {
+      if (initial) setLoading(true);
+      if (publicDemo) await apiClient.ensureDemoSession();
+      const [summaries, nextPolicies] = await Promise.all([
+        apiClient.listCases(),
+        apiClient.listPolicies(),
+      ]);
+      // Next 14 may statically cache GET lists. Hydrate case detail (dynamic id
+      // route) so displayed statuses/history always come from persisted records.
+      const details = await Promise.all(
+        summaries.map((c) => apiClient.getCase(c.caseCode)),
+      );
+      setCaseDetails(details);
+      setPolicies(nextPolicies);
+      if (initial) setLoading(false);
+    },
+    [publicDemo],
+  );
   useEffect(() => {
     const sync = () => {
       const [nextView, code] = window.location.hash.slice(1).split("/");
@@ -309,7 +319,6 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
             role="img"
             aria-label="RydeTRUE approved logo"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/rydetrue-brand-original.png" alt="" />
           </div>
         </div>
@@ -319,7 +328,11 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
           </span>
           <div>
             <strong>Ryde Operations</strong>
-            <small>Connected local workspace</small>
+            <small>
+              {publicDemo
+                ? "Isolated mock demonstration"
+                : "Connected local workspace"}
+            </small>
           </div>
           <span className="demo-workspace-label">API</span>
         </div>
@@ -486,7 +499,37 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
                 >
                   Refresh backend data
                 </button>
-                <span>Writes are persisted · no automatic approvals</span>
+                {publicDemo && (
+                  <button
+                    disabled={busy}
+                    onClick={async () => {
+                      if (
+                        !window.confirm(
+                          "Start a fresh synthetic demo? This resets both cases in your session only.",
+                        )
+                      )
+                        return;
+                      setBusy(true);
+                      setError("");
+                      try {
+                        await apiClient.resetDemoSession();
+                        await refresh();
+                        notify("Your two-case demo has been reset.");
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Start new demo
+                  </button>
+                )}
+                <span>
+                  {publicDemo
+                    ? "Private synthetic session · expires in 30 min or on restart · simulated agents and refunds"
+                    : "Writes are persisted · no automatic approvals"}
+                </span>
               </div>
               {view === "operations" ? (
                 <ConnectedOperations
@@ -570,10 +613,11 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
         {modal?.kind === "help" && (
           <Dialog title="Connected demo walkthrough" close={close}>
             <ol className="demo-guide">
-              <li>Open RT-001 and run the initial investigation.</li>
+              <li>Open RT-001 or RT-002 and run the initial investigation.</li>
               <li>Read the recorded evidence assessment and both accounts.</li>
               <li>
-                Preview and explicitly submit the synthetic THIRD_PARTY_GEOTAG.
+                Preview and explicitly submit the supplied independent synthetic
+                evidence.
               </li>
               <li>
                 Run reinvestigation. Compare the actual recommendation with the
@@ -586,15 +630,17 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
               </li>
             </ol>
             <div className="modal-note">
-              This workspace uses actual local backend APIs and SQLite
-              persistence. In mock mode, advisory agent outputs come from the
-              existing deterministic mock provider. Explicit Groq mode uses live
-              inference and never substitutes mock findings on failure. Per-run
-              execution status and provenance appear in the audit. All monetary
-              actions are simulated.
+              This workspace uses actual backend APIs and SQLite persistence. In
+              mock mode, advisory agent outputs come from the existing
+              deterministic mock provider.{" "}
+              {publicDemo
+                ? "This public demo forces mock mode and cannot invoke Groq. Sessions are temporary and isolated; Start new demo resets only your cases."
+                : "Explicit Groq mode uses live inference and never substitutes mock findings on failure."}{" "}
+              Per-run execution status and provenance appear in the audit. All
+              monetary actions are simulated.
             </div>
             <p>
-              The existing backend home page remains at <a href="/">/</a>.
+              The root URL opens this <a href="/workspace">workspace</a>.
               Statement creation, file uploads and standalone reopening are not
               supported by the documented API.
             </p>
@@ -603,11 +649,17 @@ export function ConnectedApp({ providerMode }: { providerMode: ProviderMode }) {
         {modal?.kind === "account" && (
           <Dialog title="Unauthenticated demo reviewer" close={close}>
             <p>
-              The backend trusts the submitted actor string. This workspace has
-              no authentication, roles or verified reviewer identity. Approval
-              is a persisted simulated action.
+              {publicDemo
+                ? "Public review actions are recorded as reviewer:public-demo."
+                : "The backend trusts the submitted actor string."}{" "}
+              This workspace has no authentication, roles or verified reviewer
+              identity. Approval is a persisted simulated action.
             </p>
-            <Badge tone="amber">Local synthetic demonstration only</Badge>
+            <Badge tone="amber">
+              {publicDemo
+                ? "Temporary synthetic demonstration only"
+                : "Local synthetic demonstration only"}
+            </Badge>
           </Dialog>
         )}
         {modal?.kind === "notifications" && (

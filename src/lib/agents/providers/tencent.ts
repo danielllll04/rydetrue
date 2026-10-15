@@ -13,7 +13,8 @@
  * No secrets are logged or stored in audit events.
  */
 
-import { LLMProvider, ProviderError, ProviderTimeoutError } from "../provider";
+import type { LLMProvider } from "../provider";
+import { ProviderError, ProviderTimeoutError } from "../provider-errors";
 import { ProviderMessage, ProviderResponse, ProviderOptions } from "../types";
 import { retryAfterMs } from "../rate-limit";
 

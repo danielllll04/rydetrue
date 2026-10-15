@@ -47,25 +47,8 @@ export interface LLMProvider {
  * Base error class for provider failures.
  * The orchestrator catches these and falls back to human review.
  */
-export class ProviderError extends Error {
-  readonly code: string;
-  readonly retryable: boolean;
-
-  constructor(message: string, code: string, retryable = false) {
-    super(message);
-    this.name = "ProviderError";
-    this.code = code;
-    this.retryable = retryable;
-  }
-}
-
-/** Timeout-specific error for explicit handling. */
-export class ProviderTimeoutError extends ProviderError {
-  constructor(message: string) {
-    super(message, "TIMEOUT", false);
-    this.name = "ProviderTimeoutError";
-  }
-}
+export { ProviderError, ProviderTimeoutError } from "./provider-errors";
+import { ProviderError } from "./provider-errors";
 
 /**
  * Factory: get the configured provider.
@@ -75,11 +58,8 @@ export class ProviderTimeoutError extends ProviderError {
  *  2. groq (explicit) → GroqProvider; errors escalate, never substitute mock.
  *  3. Any other value → configuration failure; no network call or mock fallback.
  *
- * Uses static ES module imports. The circular dependency between this module
- * and the provider implementations is safe in ESM because all imported values
- * (LLMProvider interface, ProviderError classes, provider constructors) are
- * only referenced inside function/method bodies at call time — never during
- * module evaluation.
+ * Provider interfaces are type-only imports; shared errors live in a separate
+ * module so adapter inheritance cannot introduce a runtime import cycle.
  */
 export function getProvider(): LLMProvider {
   const mode = selectedProviderMode();

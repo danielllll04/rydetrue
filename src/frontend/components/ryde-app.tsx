@@ -343,7 +343,6 @@ export function RydeApp() {
             aria-label="RydeTRUE approved logo"
           >
             {/* Supplied asset stays byte-for-byte unchanged; this viewport displays its primary lockup. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/rydetrue-brand-original.png" alt="" />
           </div>
         </div>

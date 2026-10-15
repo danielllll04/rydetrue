@@ -1,10 +1,11 @@
+import { withDemoSession, publicDemoEnabled } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 import { investigateRequestSchema } from "@/lib/schemas";
 import { getProvider } from "@/lib/agents/provider";
 import { investigateCase } from "@/lib/agents/orchestrator";
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }> | { id: string };
 }
 const activeCases = new Set<string>();
 
@@ -29,8 +30,8 @@ const activeCases = new Set<string>();
  *  - Human approval requirement
  *  - Error or escalation status
  */
-export async function POST(req: NextRequest, { params }: RouteParams) {
-  const caseCode = params.id;
+async function handlePOST(req: NextRequest, { params }: RouteParams) {
+  const caseCode = (await params).id;
 
   // --- Validate request body ---
   let body;
@@ -43,12 +44,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  if (activeCases.has(caseCode))
+  if (!publicDemoEnabled() && activeCases.has(caseCode))
     return NextResponse.json(
       { error: "investigation_in_progress" },
       { status: 409 },
     );
-  activeCases.add(caseCode);
+  if (!publicDemoEnabled()) activeCases.add(caseCode);
   try {
     // Only the explicit process mode selects a provider; credentials never opt in.
     const provider = getProvider();
@@ -80,6 +81,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       { status: httpStatus },
     );
   } finally {
-    activeCases.delete(caseCode);
+    if (!publicDemoEnabled()) activeCases.delete(caseCode);
   }
+}
+
+export function POST(req: NextRequest, context: RouteParams): Promise<NextResponse>;
+export function POST(req: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse>;
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+  return withDemoSession(req, request => handlePOST(request, context));
 }

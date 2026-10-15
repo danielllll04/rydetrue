@@ -20,7 +20,8 @@
  *  - "too_many_tool_calls" — keeps calling tools until the max limit
  */
 
-import { LLMProvider, ProviderError, ProviderTimeoutError } from "../provider";
+import type { LLMProvider } from "../provider";
+import { ProviderError, ProviderTimeoutError } from "../provider-errors";
 import { ProviderMessage, ProviderResponse, ProviderOptions } from "../types";
 import { fareMockAdvocate, fareMockNeutral } from "../fare-mock";
 

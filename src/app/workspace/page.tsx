@@ -9,5 +9,10 @@ export default function WorkspacePage() {
       : selected === "groq" && process.env.RYDETRUE_LLM_API_KEY?.trim()
         ? "groq"
         : "unconfigured";
-  return <ConnectedApp providerMode={mode} />;
+  return (
+    <ConnectedApp
+      providerMode={mode}
+      publicDemo={process.env.RYDETRUE_PUBLIC_DEMO === "true"}
+    />
+  );
 }

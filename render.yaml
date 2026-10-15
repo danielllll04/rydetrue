@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: rydetrue-demo
+    runtime: node
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: 'off'
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    startCommand: npm run start:public
+    healthCheckPath: /workspace
+    envVars:
+      - key: NODE_VERSION
+        value: 22.23.3
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: RYDETRUE_PUBLIC_DEMO
+        value: "true"
+      - key: RYDETRUE_LLM_MODE
+        value: mock

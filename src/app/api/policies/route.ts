@@ -1,8 +1,9 @@
+import { withDemoSession } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 
-export async function GET(_req: NextRequest) {
+async function handleGET(_req: NextRequest) {
   const policies = await prisma.policyVersion.findMany({
     orderBy: [{ code: "asc" }, { version: "desc" }],
   });
@@ -17,4 +18,8 @@ export async function GET(_req: NextRequest) {
       rules: JSON.parse(p.rules),
     })),
   });
+}
+
+export async function GET(req: NextRequest) {
+  return withDemoSession(req, request => handleGET(request));
 }

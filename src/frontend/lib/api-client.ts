@@ -62,6 +62,20 @@ export function createApiClient(
           ? error.data.error || "investigation_failed"
           : "api_error";
         const messages: Record<string, string> = {
+          demo_session_expired:
+            "This temporary demo session expired or the server restarted. Refresh data to start a fresh session.",
+          demo_capacity_reached:
+            "The free demo is busy. Wait one minute and retry; active sessions expire after 30 minutes.",
+          demo_rate_limited:
+            "The demo is busy or its request limit was reached. Wait one minute and retry.",
+          demo_mutation_limit:
+            "This session reached its write limit. Start a new demo session to continue.",
+          demo_busy:
+            "An operation is already running. Refresh before retrying.",
+          public_demo_fixture_only:
+            "The public demo accepts only the supplied synthetic evidence. Use Submit independent evidence to continue.",
+          demo_evidence_already_submitted:
+            "This independent evidence is already recorded. Refresh before reinvestigating.",
           case_not_found: "This case was not found.",
           already_actioned:
             "This recommendation has already been actioned. Refresh before continuing.",
@@ -111,7 +125,25 @@ export function createApiClient(
     }
   }
   const pathFor = (id: string) => `/api/cases/${encodeURIComponent(id)}`;
+  let sessionRequest: Promise<unknown> | undefined;
   return {
+    ensureDemoSession() {
+      sessionRequest ??= request(
+        "/api/demo/session",
+        z.object({ provider: z.literal("mock"), temporary: z.literal(true) }),
+        {},
+      ).finally(() => {
+        sessionRequest = undefined;
+      });
+      return sessionRequest;
+    },
+    resetDemoSession() {
+      return request(
+        "/api/demo/reset",
+        z.object({ provider: z.literal("mock"), temporary: z.literal(true) }),
+        {},
+      );
+    },
     async listCases() {
       return (
         await request(

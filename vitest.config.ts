@@ -8,11 +8,8 @@ export default defineConfig({
     globals: false,
     setupFiles: ["tests/setup-isolated.ts"],
     pool: "forks",
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
+    maxWorkers: 1,
+    fileParallelism: false,
     isolate: false,
   },
   resolve: {

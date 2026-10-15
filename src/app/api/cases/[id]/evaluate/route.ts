@@ -1,3 +1,4 @@
+import { withDemoSession } from "@/lib/public-demo";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { evaluateRequestSchema, Outcome } from "@/lib/schemas";
@@ -9,7 +10,7 @@ import {
 import { evaluateCategory } from "@/lib/category-policy";
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }> | { id: string };
 }
 
 /** Map outcome to case status. */
@@ -44,8 +45,8 @@ function outcomeToStatus(outcome: Outcome, refundCents: number): string {
  *   - the sufficiency state
  *   - approval state (PENDING for any monetary action)
  */
-export async function POST(req: NextRequest, { params }: RouteParams) {
-  const caseCode = params.id;
+async function handlePOST(req: NextRequest, { params }: RouteParams) {
+  const caseCode = (await params).id;
 
   let body;
   try {
@@ -217,4 +218,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       missingRequirements: sufficiency.missingRequirements,
     },
   });
+}
+export function POST(req: NextRequest, context: RouteParams): Promise<NextResponse>;
+export function POST(req: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse>;
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+  return withDemoSession(req, request => handlePOST(request, context));
 }
