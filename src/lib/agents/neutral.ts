@@ -32,6 +32,7 @@ import { SufficiencyResult } from "../sufficiency";
 const PROVIDER_TIMEOUT_MS = 30_000;
 
 export interface NeutralResolutionInput {
+  category?: string;
   riderFinding: AdvocateFinding;
   driverFinding: AdvocateFinding;
   evidenceSnapshot: EvidenceSnapshot;
@@ -53,7 +54,7 @@ export async function runNeutralResolution(
   const startTime = Date.now();
 
   // Build the system prompt.
-  const systemPrompt = neutralResolutionPrompt();
+  const systemPrompt = neutralResolutionPrompt(input.category);
 
   // Build the user message with all context.
   const userMessage = buildUserMessage(input);

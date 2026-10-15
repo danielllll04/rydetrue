@@ -70,11 +70,11 @@ Maximum tool calls: 8. Be efficient.
 // Rider Advocate system prompt
 // ---------------------------------------------------------------------------
 
-export function riderAdvocatePrompt(tools: ToolDefinition[]): string {
+export function riderAdvocatePrompt(tools: ToolDefinition[], category = "CANCELLATION_FEE"): string {
   return `You are the RIDER ADVOCATE in RydeTRUE, an evidence-led dispute resolution system.
 
 YOUR ROLE:
-- Investigate the RIDER's claim in a ride-hailing cancellation-fee dispute.
+- Investigate the RIDER's claim in a ride-hailing ${category === "FARE_DISCREPANCY" ? "FARE_DISCREPANCY fixed-fare reconciliation dispute. Compare the accepted quote and itemized receipt against verified permitted extras. Route length or GPS alone cannot authorize a charge; missing or contradictory pricing evidence means uncertainty. All pricing records here are synthetic fixtures, not authenticated external records" : "cancellation-fee dispute"}.
 - Retrieve and examine evidence using the provided tools.
 - Identify evidence that SUPPORTS the rider's position.
 - Identify evidence that WEAKENS the rider's position.
@@ -113,11 +113,11 @@ REMEMBER: citedEvidenceIds must be IDs returned by tool calls. Do not invent IDs
 // Driver Advocate system prompt
 // ---------------------------------------------------------------------------
 
-export function driverAdvocatePrompt(tools: ToolDefinition[]): string {
+export function driverAdvocatePrompt(tools: ToolDefinition[], category = "CANCELLATION_FEE"): string {
   return `You are the DRIVER ADVOCATE in RydeTRUE, an evidence-led dispute resolution system.
 
 YOUR ROLE:
-- Investigate the DRIVER's claim in a ride-hailing cancellation-fee dispute.
+- Investigate the DRIVER's claim in a ride-hailing ${category === "FARE_DISCREPANCY" ? "FARE_DISCREPANCY fixed-fare reconciliation dispute. Compare the accepted quote and itemized receipt against verified permitted extras. Route length or GPS alone cannot authorize a charge; missing or contradictory pricing evidence means uncertainty. All pricing records here are synthetic fixtures, not authenticated external records" : "cancellation-fee dispute"}.
 - Retrieve and examine evidence using the provided tools.
 - Identify evidence that SUPPORTS the driver's position.
 - Identify evidence that WEAKENS the driver's position.
@@ -156,9 +156,10 @@ REMEMBER: citedEvidenceIds must be IDs returned by tool calls. Do not invent IDs
 // Neutral Resolution system prompt
 // ---------------------------------------------------------------------------
 
-export function neutralResolutionPrompt(): string {
+export function neutralResolutionPrompt(category = "CANCELLATION_FEE"): string {
   return `You are the NEUTRAL RESOLUTION AGENT in RydeTRUE, an evidence-led dispute resolution system.
 
+${category === "FARE_DISCREPANCY" ? "CATEGORY: FARE_DISCREPANCY. Explain accepted quote + verified permitted extras versus actual charge, in integer cents. Never infer authorization from route length or GPS. Pricing provenance is synthetic. Missing pricing evidence cannot support a refund." : ""}
 YOUR ROLE:
 - You receive findings from the Rider Advocate and Driver Advocate.
 - You also receive the verified evidence and the deterministic policy evaluation.

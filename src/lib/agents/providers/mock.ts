@@ -22,6 +22,7 @@
 
 import { LLMProvider, ProviderError, ProviderTimeoutError } from "../provider";
 import { ProviderMessage, ProviderResponse, ProviderOptions } from "../types";
+import { fareMockAdvocate, fareMockNeutral } from "../fare-mock";
 
 export type MockFailMode =
   | null
@@ -86,7 +87,7 @@ export class MockProvider implements LLMProvider {
     if (isNeutral) {
       return {
         content: JSON.stringify({
-          final_answer: this.buildNeutralFinding(messages),
+          final_answer: systemPrompt.includes("FARE_DISCREPANCY") ? fareMockNeutral(messages) : this.buildNeutralFinding(messages),
         }),
         finishReason: "stop",
         usage: { promptTokens: 500, completionTokens: 300 },
@@ -250,7 +251,7 @@ export class MockProvider implements LLMProvider {
 
     return {
       content: JSON.stringify({
-        final_answer: this.buildAdvocateFinding(role, party, evidenceIds),
+        final_answer: systemPrompt.includes("FARE_DISCREPANCY") ? fareMockAdvocate(messages, isRiderAdvocate) : this.buildAdvocateFinding(role, party, evidenceIds),
       }),
       finishReason: "stop",
       usage: { promptTokens: 800, completionTokens: 400 },

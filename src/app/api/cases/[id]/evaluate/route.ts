@@ -6,11 +6,7 @@ import {
   hashPayload,
   verifyHash,
 } from "@/lib/evidence";
-import { evaluatePolicy, trailsFromGroups, Policy } from "@/lib/policy";
-import {
-  checkSufficiency,
-  extractGeotag,
-} from "@/lib/sufficiency";
+import { evaluateCategory } from "@/lib/category-policy";
 
 interface RouteParams {
   params: { id: string };
@@ -99,68 +95,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const policy: Policy = (() => {
-    const parsed = JSON.parse(policyRow.rules);
-    return {
-      code: policyRow.code,
-      version: policyRow.version,
-      description: policyRow.description,
-      rules: parsed.rules,
-      fallback: parsed.fallback,
-    };
-  })();
-
-  // --- Build evaluation context ---
+  let evaluated: ReturnType<typeof evaluateCategory>;
+  try { evaluated = evaluateCategory(dispute, policyRow); }
+  catch { return NextResponse.json({ error: "invalid_category_policy_or_evidence" }, { status: 422 }); }
+  const { sufficiency, evaluation } = evaluated;
   const groups = groupLatestByRefGroup(evidence);
-  const { driverGpsTrail, riderGpsTrail } = trailsFromGroups(groups);
-  const thirdPartyGeotag = extractGeotag(groups);
-
-  // Extract wait time from TRIP_TELEMETRY if present.
-  let waitSeconds = 0;
-  for (const g of groups) {
-    if (g.type === "TRIP_TELEMETRY") {
-      const p = g.latest.payload;
-      if (p.type === "TRIP_TELEMETRY" && p.waitSeconds !== undefined) {
-        waitSeconds = p.waitSeconds;
-      }
-    }
-  }
-
-  // Check which statements are present.
-  const hasRiderStatement = dispute.statements.some((s) => s.role === "RIDER");
-  const hasDriverStatement = dispute.statements.some((s) => s.role === "DRIVER");
-
-  // Check if trip telemetry is present.
-  const hasTripTelemetry = groups.some((g) => g.type === "TRIP_TELEMETRY");
-
-  // --- Sufficiency check (runs BEFORE policy evaluation) ---
-  const sufficiency = checkSufficiency({
-    hasRiderStatement,
-    hasDriverStatement,
-    hasTripTelemetry,
-    riderGpsTrail,
-    driverGpsTrail,
-    thirdPartyGeotag,
-  });
-
-  // --- Policy evaluation (gated by sufficiency) ---
-  const evaluation = evaluatePolicy(
-    {
-      pickup: { lat: dispute.trip.pickupLat, lng: dispute.trip.pickupLng },
-      riderGpsTrail,
-      driverGpsTrail,
-      thirdPartyGeotag,
-      fareCents: dispute.trip.fareAmountCents,
-      cancellationFeeCents: dispute.trip.cancellationFeeCents ?? 0,
-      waitSeconds,
-      hasRiderStatement,
-      hasDriverStatement,
-      hasTripTelemetry,
-      evidenceById: new Map(),
-    },
-    policy,
-    sufficiency.state
-  );
 
   // --- Build evidence snapshot (which evidence versions were considered) ---
   const evidenceSnapshot = groups.map((g) => ({

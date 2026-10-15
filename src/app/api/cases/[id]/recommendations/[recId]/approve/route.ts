@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { reviewRecommendation, ReviewError } from "@/lib/human-review";
 import { approveRequestSchema } from "@/lib/schemas";
 
 interface RouteParams {
@@ -29,73 +29,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  // Find the dispute.
-  const dispute = await prisma.dispute.findFirst({
-    where: { caseCode },
-  });
-  if (!dispute) {
-    return NextResponse.json({ error: "case_not_found", caseCode }, { status: 404 });
+  let updated;
+  try { updated = await reviewRecommendation(caseCode, recId, body); }
+  catch (error) {
+    return NextResponse.json({ error: error instanceof ReviewError ? error.code : "review_conflict", caseCode, recommendationId: recId }, { status: error instanceof ReviewError ? error.status : 409 });
   }
-
-  // Find the recommendation.
-  const recommendation = await prisma.recommendation.findFirst({
-    where: { id: recId, disputeId: dispute.id },
-  });
-  if (!recommendation) {
-    return NextResponse.json(
-      { error: "recommendation_not_found", caseCode, recommendationId: recId },
-      { status: 404 }
-    );
-  }
-
-  // Only PENDING recommendations can be approved/rejected.
-  if (recommendation.approvalState !== "PENDING") {
-    return NextResponse.json(
-      {
-        error: "already_actioned",
-        caseCode,
-        recommendationId: recId,
-        currentApprovalState: recommendation.approvalState,
-      },
-      { status: 409 }
-    );
-  }
-
-  const now = new Date();
-  const updated = await prisma.recommendation.update({
-    where: { id: recId },
-    data: {
-      approvalState: body.decision,
-      approvedBy: body.actor,
-      approvedAt: now,
-    },
-  });
-
-  // Create audit event.
-  await prisma.auditEvent.create({
-    data: {
-      disputeId: dispute.id,
-      actor: body.actor,
-      action: body.decision === "APPROVED" ? "APPROVE" : "REJECT",
-      payload: JSON.stringify({
-        recommendationId: recId,
-        outcome: recommendation.outcome,
-        refundCents: recommendation.refundCents,
-        decision: body.decision,
-        notes: body.notes ?? null,
-        approvedAt: now.toISOString(),
-        simulated: true, // All monetary actions are simulated
-      }),
-    },
-  });
-
-  // Update case status.
-  const newStatus = body.decision === "APPROVED" ? "APPROVED" : "REJECTED";
-  await prisma.dispute.update({
-    where: { id: dispute.id },
-    data: { status: newStatus },
-  });
-
   return NextResponse.json({
     caseCode,
     recommendation: {

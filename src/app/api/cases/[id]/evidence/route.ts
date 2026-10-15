@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { submitEvidenceRequestSchema, evidencePayloadSchema } from "@/lib/schemas";
 import { hashPayload } from "@/lib/evidence";
+import { FARE_EVIDENCE_TYPES } from "@/lib/fare-contracts";
 
 interface RouteParams {
   params: { id: string };
@@ -52,6 +53,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       { status: 400 }
     );
   }
+
+  if (validatedPayload.type !== body.type)
+    return NextResponse.json({ error: "evidence_type_mismatch" }, { status: 400 });
+  if (FARE_EVIDENCE_TYPES.some(type => type === validatedPayload.type)) {
+    const payload = validatedPayload as import("@/lib/fare-contracts").FareEvidence;
+    const source = payload.type === "FARE_ADJUSTMENT_RECORD" ? "THIRD_PARTY" : "PLATFORM";
+    if (dispute.category !== "FARE_DISCREPANCY" || payload.caseCode !== caseCode || body.source !== source)
+      return NextResponse.json({ error: "fare_evidence_scope_or_source_mismatch" }, { status: 400 });
+  }
+  if (dispute.evidence.some(e => e.refGroup === body.refGroup && (e.type !== body.type || e.source !== body.source)))
+    return NextResponse.json({ error: "evidence_group_identity_mismatch" }, { status: 400 });
 
   // Compute hash over canonical JSON of the validated payload.
   const hash = hashPayload(validatedPayload);

@@ -22,8 +22,7 @@
 
 import { prisma } from "@/lib/db";
 import { groupLatestByRefGroup, verifyHash, hashPayload } from "@/lib/evidence";
-import { checkSufficiency, extractGeotag } from "@/lib/sufficiency";
-import { evaluatePolicy, trailsFromGroups, Policy } from "@/lib/policy";
+import { evaluateCategory } from "@/lib/category-policy";
 import { LLMProvider } from "./provider";
 import {
   EvidenceSnapshot,
@@ -43,8 +42,6 @@ import {
 import { EVIDENCE_TOOLS } from "./tools";
 import { AdvocateFinding } from "./schemas";
 import { NeutralResolution } from "./schemas";
-import { EvaluationResult } from "@/lib/policy";
-import { SufficiencyResult } from "@/lib/sufficiency";
 import { loadCompletedAdvocates } from "./resume";
 
 const INVESTIGATION_TIMEOUT_MS = 120_000;
@@ -130,6 +127,7 @@ export async function investigateCase(
     })),
     tripInfo: {
       caseCode: dispute.trip.caseCode,
+      category: dispute.category,
       city: dispute.trip.city,
       status: dispute.trip.status,
       pickupLabel: dispute.trip.pickupLabel,
@@ -151,34 +149,6 @@ export async function investigateCase(
   // STEP 7 (pre-compute): Run deterministic sufficiency + policy evaluation
   // This runs BEFORE the neutral agent so the agent can reference it.
   // -------------------------------------------------------------------------
-  const { riderGpsTrail, driverGpsTrail } = trailsFromGroups(groups);
-  const thirdPartyGeotag = extractGeotag(groups);
-
-  let waitSeconds = 0;
-  for (const g of groups) {
-    if (g.type === "TRIP_TELEMETRY") {
-      const p = g.latest.payload;
-      if (p.type === "TRIP_TELEMETRY" && p.waitSeconds !== undefined) {
-        waitSeconds = p.waitSeconds;
-      }
-    }
-  }
-
-  const hasRiderStatement = dispute.statements.some((s) => s.role === "RIDER");
-  const hasDriverStatement = dispute.statements.some(
-    (s) => s.role === "DRIVER",
-  );
-  const hasTripTelemetry = groups.some((g) => g.type === "TRIP_TELEMETRY");
-
-  const sufficiency: SufficiencyResult = checkSufficiency({
-    hasRiderStatement,
-    hasDriverStatement,
-    hasTripTelemetry,
-    riderGpsTrail,
-    driverGpsTrail,
-    thirdPartyGeotag,
-  });
-
   // Find policy version.
   const policyRow = await prisma.policyVersion.findFirst({
     where: {
@@ -198,43 +168,20 @@ export async function investigateCase(
     );
   }
 
-  const policy: Policy = (() => {
-    const parsed = JSON.parse(policyRow.rules);
-    return {
-      code: policyRow.code,
-      version: policyRow.version,
-      description: policyRow.description,
-      rules: parsed.rules,
-      fallback: parsed.fallback,
-    };
-  })();
-
-  const policyEvaluation: EvaluationResult = evaluatePolicy(
-    {
-      pickup: { lat: dispute.trip.pickupLat, lng: dispute.trip.pickupLng },
-      riderGpsTrail,
-      driverGpsTrail,
-      thirdPartyGeotag,
-      fareCents: dispute.trip.fareAmountCents,
-      cancellationFeeCents: dispute.trip.cancellationFeeCents ?? 0,
-      waitSeconds,
-      hasRiderStatement,
-      hasDriverStatement,
-      hasTripTelemetry,
-      evidenceById: new Map(),
-    },
-    policy,
-    sufficiency.state,
-  );
+  let evaluated: ReturnType<typeof evaluateCategory>;
+  try { evaluated = evaluateCategory(dispute, policyRow); }
+  catch { return buildErrorResult(investigationId, caseCode, "Category, evidence or policy is invalid for this investigation.", "invalid_category_policy_or_evidence"); }
+  const { policy, sufficiency, evaluation: policyEvaluation } = evaluated;
 
   // -------------------------------------------------------------------------
   // STEP 3 & 4: Execute Rider Advocate and Driver Advocate
   // (independently, in parallel for efficiency)
   // -------------------------------------------------------------------------
-  const riderSystemPrompt = riderAdvocatePrompt(EVIDENCE_TOOLS);
-  const driverSystemPrompt = driverAdvocatePrompt(EVIDENCE_TOOLS);
+  const riderSystemPrompt = riderAdvocatePrompt(EVIDENCE_TOOLS, dispute.category);
+  const driverSystemPrompt = driverAdvocatePrompt(EVIDENCE_TOOLS, dispute.category);
   const inputFingerprint = hashPayload({
-    workflow: "validated-groq-retry-v1",
+    workflow: "category-bound-reconciliation-v2",
+    category: dispute.category,
     provider: provider.name,
     configuration: provider.configurationIdentity ?? null,
     snapshot: [...snapshotEntries].sort((a, b) =>
@@ -252,7 +199,7 @@ export async function investigateCase(
     },
     sufficiency,
     policyEvaluation,
-    prompts: [riderSystemPrompt, driverSystemPrompt, neutralResolutionPrompt()],
+    prompts: [riderSystemPrompt, driverSystemPrompt, neutralResolutionPrompt(dispute.category)],
     tools: EVIDENCE_TOOLS,
   });
   let completed: Awaited<ReturnType<typeof loadCompletedAdvocates>> = {};
@@ -342,6 +289,7 @@ export async function investigateCase(
     // STEP 6: Execute Neutral Resolution Agent
     // -----------------------------------------------------------------------
     neutralResult = await runNeutralResolution(provider, {
+      category: dispute.category,
       riderFinding: riderResult.finding as AdvocateFinding,
       driverFinding: driverResult.finding as AdvocateFinding,
       evidenceSnapshot: snapshot,
@@ -376,7 +324,7 @@ export async function investigateCase(
       (policyOutcome === "REFUND_FULL" &&
         /no refund|fee retained|deny/i.test(neutralExplanation)) ||
       (policyOutcome === "NO_REFUND" &&
-        /refund|return.*fee|reimburse/i.test(neutralExplanation)) ||
+        /refund|return.*fee|reimburse/i.test(neutralExplanation.replace(/NO_REFUND|no refund|no reimbursement|not refundable/gi, ""))) ||
       (policyOutcome === "INSUFFICIENT_EVIDENCE" &&
         /\bsufficient\b|enough evidence/i.test(neutralExplanation));
 

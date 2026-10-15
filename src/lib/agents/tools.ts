@@ -87,6 +87,7 @@ export interface ToolContext {
   }>;
   tripInfo: {
     caseCode: string;
+    category?: string;
     city: string;
     status: string;
     pickupLabel: string;
