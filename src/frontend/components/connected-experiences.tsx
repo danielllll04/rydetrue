@@ -24,6 +24,12 @@ import {
 } from "../lib/view-model";
 import { Badge, Button, EmptyState, Panel, SectionTitle } from "./ui";
 import { EvidenceReferences, PersistedAudit } from "./connected-investigation";
+import {
+  resolutionTitle,
+  resolutionDecision,
+  resolutionExplanation,
+  resolutionHistory,
+} from "../lib/resolution-presentation";
 export function ConnectedOperations({
   cases,
   open,
@@ -485,18 +491,7 @@ export function ConnectedResolution({
   busy: boolean;
 }) {
   const rec = detail.currentRecommendation;
-  const previous = detail.recommendationHistory.slice(-2)[0];
-  const additions =
-    rec && previous && previous.id !== rec.id
-      ? rec.evidenceSnapshot.filter(
-          (e) =>
-            !previous.evidenceSnapshot.some(
-              (p) =>
-                `${p.refGroup}:${p.version}:${p.hash}` ===
-                `${e.refGroup}:${e.version}:${e.hash}`,
-            ),
-        )
-      : [];
+  const history = resolutionHistory(detail);
   return (
     <div className="resolution-shell">
       <div className="page-heading">
@@ -521,20 +516,16 @@ export function ConnectedResolution({
         <Badge tone={rec?.approvalState === "APPROVED" ? "green" : "amber"}>
           {rec ? humanize(rec.approvalState) : "No recommendation"}
         </Badge>
-        <h2>
-          {rec
-            ? `${outcomeLabel(rec.outcome)}${rec.refundCents ? ` · ${money(rec.refundCents)}` : ""}`
-            : "Start with an investigation"}
-        </h2>
+        <h2>{rec ? resolutionTitle(rec) : "Start with an investigation"}</h2>
         {rec && <p className="backend-code">Backend code: {rec.outcome}</p>}
         <p>
-          {rec?.rationale || "No backend recommendation has been issued yet."}
+          {rec
+            ? resolutionExplanation(rec)
+            : "No backend recommendation has been issued yet."}
         </p>
         <div className="resolution-status">
           <ShieldCheck size={17} />
-          {rec?.approvalState === "APPROVED"
-            ? `Human approval recorded by ${rec.approvedBy}. All monetary actions are simulated.`
-            : "A pending refund requires an explicit human approval. No real money is moved."}
+          {resolutionDecision(rec)}
         </div>
         {rec && !isSnapshotCurrent(detail) && (
           <p className="form-error">
@@ -543,32 +534,6 @@ export function ConnectedResolution({
           </p>
         )}
       </Panel>
-      {additions.length > 0 && (
-        <Panel className="change-explanation">
-          <SectionTitle>What changed between recommendations?</SectionTitle>
-          <p>
-            {outcomeLabel(previous.outcome)} →{" "}
-            {rec && outcomeLabel(rec.outcome)}. New evidence versions were
-            included in the later snapshot:
-          </p>
-          {additions.map((e) => (
-            <div className="change-row" key={e.evidenceId}>
-              <Badge tone="pink">
-                {e.refGroup} v{e.version}
-              </Badge>
-              <EvidenceReferences
-                detail={detail}
-                ids={[e.evidenceId]}
-                inspect={inspect}
-              />
-            </div>
-          ))}
-          <p className="quiet small">
-            The backend’s sufficiency and policy results govern the change;
-            agent explanations are advisory.
-          </p>
-        </Panel>
-      )}
       <div className="resolution-grid">
         <Panel>
           <SectionTitle
@@ -578,55 +543,95 @@ export function ConnectedResolution({
           >
             Recommendation history
           </SectionTitle>
+          <p className="quiet small">
+            Earliest to latest · each assessment keeps its recorded outcome and
+            evidence snapshot.
+          </p>
           {detail.recommendationHistory.length ? (
-            [...detail.recommendationHistory].reverse().map((item) => (
-              <article className="history-recommendation" key={item.id}>
-                <div className="inline">
-                  <Badge tone={item.isCurrent ? "pink" : "muted"}>
-                    {item.isCurrent ? "Current" : "Superseded"}
-                  </Badge>
-                  <Badge
-                    tone={item.approvalState === "APPROVED" ? "green" : "muted"}
-                  >
-                    {humanize(item.approvalState)}
-                  </Badge>
-                </div>
-                <h3>
-                  {outcomeLabel(item.outcome)}{" "}
-                  {item.refundCents ? money(item.refundCents) : ""}
-                </h3>
-                <p className="backend-code">Backend code: {item.outcome}</p>
-                <p>{item.rationale}</p>
-                <small>
-                  {dateTime(item.createdAt)} · {item.policyCode} v
-                  {item.policyVersion}
-                </small>
-                <p className="quiet small">
-                  {item.sufficiencyState} · {item.evidenceSnapshot.length}{" "}
-                  evidence groups
-                </p>
-                <EvidenceReferences
-                  detail={detail}
-                  ids={item.citations.map((c) =>
-                    resolveCitationId(c.evidenceId, item),
+            <ol className="resolution-records">
+              {history.map(({ item, additions }, index) => (
+                <li key={item.id}>
+                  {additions.length > 0 && (
+                    <div className="resolution-evidence-change">
+                      <strong>
+                        {additions.some((e) => e.type === "THIRD_PARTY_GEOTAG")
+                          ? "Independent geotag added"
+                          : "Evidence snapshot updated"}
+                      </strong>
+                      <p>
+                        New evidence versions included in the assessment below.
+                      </p>
+                      {additions.map((entry) => (
+                        <div key={entry.evidenceId}>
+                          <EvidenceReferences
+                            detail={detail}
+                            ids={[entry.evidenceId]}
+                            inspect={inspect}
+                          />
+                          {entry.submittedAt && (
+                            <time>Submitted {dateTime(entry.submittedAt)}</time>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  inspect={inspect}
-                />
-                <details>
-                  <summary>Snapshot & policy citations</summary>
-                  <pre className="json-block">
-                    {JSON.stringify(
-                      {
-                        evidenceSnapshot: item.evidenceSnapshot,
-                        citations: item.citations,
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </details>
-              </article>
-            ))
+                  <article className="history-recommendation">
+                    <span className="resolution-assessment">
+                      {index === 0
+                        ? "Initial assessment"
+                        : `Assessment ${index + 1}`}{" "}
+                      · {dateTime(item.createdAt)}
+                    </span>
+                    <div className="inline">
+                      <Badge tone={item.id === rec?.id ? "pink" : "muted"}>
+                        {item.id === rec?.id ? "Current" : "Superseded"}
+                      </Badge>
+                      <Badge
+                        tone={
+                          item.approvalState === "APPROVED" ? "green" : "muted"
+                        }
+                      >
+                        {humanize(item.approvalState)}
+                      </Badge>
+                    </div>
+                    <h3>{resolutionTitle(item)}</h3>
+                    <p className="backend-code">Backend code: {item.outcome}</p>
+                    <small>
+                      {item.policyCode} v{item.policyVersion}
+                    </small>
+                    <p className="quiet small">
+                      {item.sufficiencyState} · {item.evidenceSnapshot.length}{" "}
+                      evidence groups
+                    </p>
+                    <EvidenceReferences
+                      detail={detail}
+                      ids={item.citations.map((c) =>
+                        resolveCitationId(c.evidenceId, item),
+                      )}
+                      inspect={inspect}
+                    />
+                    <details>
+                      <summary>
+                        Original explanation, snapshot & policy citations
+                      </summary>
+                      <pre className="json-block">
+                        {JSON.stringify(
+                          {
+                            outcome: item.outcome,
+                            approvalState: item.approvalState,
+                            rationale: item.rationale,
+                            evidenceSnapshot: item.evidenceSnapshot,
+                            citations: item.citations,
+                          },
+                          null,
+                          2,
+                        )}
+                      </pre>
+                    </details>
+                  </article>
+                </li>
+              ))}
+            </ol>
           ) : (
             <EmptyState title="No recommendations yet">
               Run the investigation from the workspace.
@@ -634,7 +639,7 @@ export function ConnectedResolution({
           )}
         </Panel>
         <Panel>
-          <SectionTitle>Why this outcome?</SectionTitle>
+          <SectionTitle>How we reached this decision</SectionTitle>
           <div className="reason-item">
             <span>01</span>
             <div>
